@@ -14,6 +14,8 @@
 use juniper_from_schema::Walked;
 use std::fmt;
 
+pub use juniper_eager_loading_code_gen::EagerLoading;
+
 #[derive(Debug, Copy, Clone)]
 pub enum DbEdgeError {
     NotLoaded,
@@ -36,6 +38,12 @@ pub enum DbEdge<T> {
     Loaded(T),
     NotLoaded,
     LoadFailed,
+}
+
+impl<T> Default for DbEdge<T> {
+    fn default() -> Self {
+        DbEdge::NotLoaded
+    }
 }
 
 impl<T> DbEdge<T> {
@@ -61,6 +69,12 @@ pub enum OptionDbEdge<T> {
     Loaded(Option<T>),
     NotLoaded,
     LoadFailed,
+}
+
+impl<T> Default for OptionDbEdge<T> {
+    fn default() -> Self {
+        OptionDbEdge::NotLoaded
+    }
 }
 
 impl<T> OptionDbEdge<T> {
@@ -92,7 +106,7 @@ impl<T> OptionDbEdge<T> {
 
 pub trait GraphqlNodeForModel: Sized {
     type Model;
-    type Id;
+    type Id: Clone;
     type Connection;
     type Error;
 
@@ -186,4 +200,16 @@ where
         // eager_load_all_children_for_each doesn't remove things from the vec
         Ok(nodes.remove(0))
     }
+}
+
+// TODO: Add derive for this what works with Diesel
+pub trait LoadFromIds: Sized {
+    type Id;
+    type Error;
+    type Connection;
+
+    fn load(
+        ids: &[Self::Id],
+        db: &Self::Connection,
+    ) -> Result<Vec<Self>, Self::Error>;
 }

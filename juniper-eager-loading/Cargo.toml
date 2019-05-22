@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 juniper-from-schema = { path = "/Users/davidpdrsn/dev/major/juniper-from-schema/juniper-from-schema" }
+juniper-eager-loading-code-gen = { path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]
 juniper = "^0.12"

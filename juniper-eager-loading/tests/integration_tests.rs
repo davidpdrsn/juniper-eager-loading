@@ -1,7 +1,8 @@
 use assert_json_diff::assert_json_eq;
 use juniper::{Executor, FieldResult};
 use juniper_eager_loading::{
-    DbEdge, EagerLoadAllChildren, EagerLoadChildrenOfType, GraphqlNodeForModel,
+    DbEdge, EagerLoadAllChildren, EagerLoadChildrenOfType, EagerLoading, GraphqlNodeForModel,
+    OptionDbEdge,
 };
 use juniper_from_schema::{graphql_schema, Walked};
 use serde_json::{json, Value};
@@ -25,9 +26,14 @@ graphql_schema! {
     type User {
         id: Int!
         country: Country!
+        city: City
     }
 
     type Country {
+        id: Int!
+    }
+
+    type City {
         id: Int!
     }
 }
@@ -37,17 +43,58 @@ mod models {
     pub struct User {
         pub id: i32,
         pub country_id: i32,
+        pub city_id: Option<i32>,
     }
 
     #[derive(Clone)]
     pub struct Country {
         pub id: i32,
     }
+
+    impl juniper_eager_loading::LoadFromIds for Country {
+        type Id = i32;
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let countries = db
+                .countries
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(countries)
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct City {
+        pub id: i32,
+    }
+
+    impl juniper_eager_loading::LoadFromIds for City {
+        type Id = i32;
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let countries = db
+                .cities
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(countries)
+        }
+    }
 }
 
 pub struct Db {
     users: StatsHash<i32, models::User>,
     countries: StatsHash<i32, models::Country>,
+    cities: StatsHash<i32, models::City>,
 }
 
 pub struct Context {
@@ -89,10 +136,32 @@ impl MutationFields for Mutation {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, EagerLoading)]
+#[eager_loading(
+    model = "models::User",
+    id = "i32",
+    connection = "Db",
+    error = "Box<dyn std::error::Error>",
+    root_model_field = "user"
+)]
 pub struct User {
     user: models::User,
+
+    #[eager_loading(foreign_key_field = "country_id")]
     country: DbEdge<Country>,
+
+    // foreign_key_field is optional
+    city: OptionDbEdge<City>,
+}
+
+impl From<&models::User> for User {
+    fn from(model: &models::User) -> Self {
+        Self {
+            user: model.clone(),
+            country: DbEdge::default(),
+            city: OptionDbEdge::default(),
+        }
+    }
 }
 
 impl UserFields for User {
@@ -107,105 +176,64 @@ impl UserFields for User {
     ) -> FieldResult<&Country> {
         Ok(self.country.try_unwrap()?)
     }
+
+    fn field_city(
+        &self,
+        executor: &Executor<'_, Context>,
+        trail: &QueryTrail<'_, City, Walked>,
+    ) -> FieldResult<&Option<City>> {
+        Ok(self.city.try_unwrap()?)
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, EagerLoading)]
+#[eager_loading(
+    model = "models::Country",
+    connection = "Db",
+    error = "Box<dyn std::error::Error>",
+    root_model_field = "country"
+)]
 pub struct Country {
-    id: i32,
+    country: models::Country,
+}
+
+impl From<&models::Country> for Country {
+    fn from(model: &models::Country) -> Self {
+        Self {
+            country: model.clone(),
+        }
+    }
 }
 
 impl CountryFields for Country {
     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
-        Ok(&self.id)
+        Ok(&self.country.id)
     }
 }
 
-impl<'a, T> juniper_eager_loading::GenericQueryTrail<T, juniper_from_schema::Walked>
-    for QueryTrail<'a, T, juniper_from_schema::Walked>
-{
+#[derive(Clone, EagerLoading)]
+#[eager_loading(
+    model = "models::City",
+    id = "i32",
+    connection = "Db",
+    error = "Box<dyn std::error::Error>",
+    root_model_field = "city"
+)]
+pub struct City {
+    city: models::City,
 }
 
-impl juniper_eager_loading::GraphqlNodeForModel for User {
-    type Model = models::User;
-    type Id = i32;
-    type Connection = Db;
-    type Error = Box<dyn std::error::Error>;
-
-    fn new_from_model(model: &Self::Model) -> Self {
+impl From<&models::City> for City {
+    fn from(model: &models::City) -> Self {
         Self {
-            user: model.clone(),
-            country: DbEdge::NotLoaded,
+            city: model.clone(),
         }
     }
 }
 
-impl<'a> EagerLoadAllChildren<QueryTrail<'a, Self, juniper_from_schema::Walked>> for User {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        db: &Self::Connection,
-        trail: &QueryTrail<'a, Self, Walked>,
-    ) -> Result<(), Self::Error> {
-        if let Some(trail) = trail.country().walk() {
-            EagerLoadChildrenOfType::<Country, _>::eager_load_children(nodes, models, db, &trail)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<'a> EagerLoadChildrenOfType<Country, QueryTrail<'a, Country, Walked>> for User {
-    type ChildModel = models::Country;
-    type ChildId = Self::Id;
-
-    fn child_id(model: &Self::Model) -> Self::ChildId {
-        model.country_id
-    }
-
-    fn load_children(
-        ids: &[Self::ChildId],
-        db: &Self::Connection,
-    ) -> Result<Vec<Self::ChildModel>, Self::Error> {
-        let countries = db
-            .countries
-            .all_values()
-            .into_iter()
-            .filter(|country| ids.contains(&country.id))
-            .cloned()
-            .collect::<Vec<_>>();
-        Ok(countries)
-    }
-
-    fn is_child_of(node: &Self, country: &Country) -> bool {
-        node.user.country_id == country.id
-    }
-
-    fn loaded_or_missing_child(node: &mut Self, child: Option<&Country>) {
-        node.country.loaded_or_failed(child.cloned())
-    }
-}
-
-impl juniper_eager_loading::GraphqlNodeForModel for Country {
-    type Model = models::Country;
-    type Id = i32;
-    type Connection = Db;
-    type Error = Box<dyn std::error::Error>;
-
-    fn new_from_model(model: &Self::Model) -> Self {
-        Self {
-            id: model.id,
-        }
-    }
-}
-
-impl<'a> EagerLoadAllChildren<QueryTrail<'a, Self, juniper_from_schema::Walked>> for Country {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        db: &Self::Connection,
-        trail: &QueryTrail<'a, Self, Walked>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
+impl CityFields for City {
+    fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+        Ok(&self.city.id)
     }
 }
 
@@ -228,18 +256,29 @@ fn loading_users() {
 }
 
 #[test]
-fn loading_users_and_countries() {
-    let (json, counts) = run_query("query Test { users { id country { id } } }");
+fn loading_users_and_associations() {
+    let (json, counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                country { id }
+                city { id }
+            }
+        }
+    "#,
+    );
 
     assert_eq!(1, counts.user_reads);
     assert_eq!(1, counts.country_reads);
+    assert_eq!(1, counts.city_reads);
 
     assert_json_eq!(
         json!({
             "users": [
-                { "id": 1, "country": { "id": 1 } },
-                { "id": 2, "country": { "id": 1 } },
-                { "id": 3, "country": { "id": 1 } },
+                { "id": 1, "country": { "id": 10 }, "city": { "id": 20 } },
+                { "id": 2, "country": { "id": 10 }, "city": { "id": 20 } },
+                { "id": 3, "country": { "id": 10 }, "city": { "id": 20 } },
             ]
         }),
         json,
@@ -249,21 +288,52 @@ fn loading_users_and_countries() {
 struct DbStats {
     user_reads: usize,
     country_reads: usize,
+    city_reads: usize,
 }
 
 fn run_query(query: &str) -> (Value, DbStats) {
     let mut countries = StatsHash::default();
-    let country = models::Country { id: 1 };
+    let country = models::Country { id: 10 };
     let country_id = country.id;
     countries.insert(country_id, country);
 
+    let mut cities = StatsHash::default();
+    let city = models::City { id: 20 };
+    let city_id = city.id;
+    cities.insert(city_id, city);
+
     let mut users = StatsHash::default();
-    users.insert(1, models::User { id: 1, country_id });
-    users.insert(2, models::User { id: 2, country_id });
-    users.insert(3, models::User { id: 3, country_id });
+    users.insert(
+        1,
+        models::User {
+            id: 1,
+            country_id,
+            city_id: Some(city_id),
+        },
+    );
+    users.insert(
+        2,
+        models::User {
+            id: 2,
+            country_id,
+            city_id: Some(city_id),
+        },
+    );
+    users.insert(
+        3,
+        models::User {
+            id: 3,
+            country_id,
+            city_id: Some(city_id),
+        },
+    );
 
     let ctx = Context {
-        db: Db { users, countries },
+        db: Db {
+            users,
+            countries,
+            cities,
+        },
     };
 
     let (result, errors) = juniper::execute(
@@ -288,6 +358,7 @@ fn run_query(query: &str) -> (Value, DbStats) {
         DbStats {
             user_reads: ctx.db.users.reads_count(),
             country_reads: ctx.db.countries.reads_count(),
+            city_reads: ctx.db.cities.reads_count(),
         },
     )
 }
