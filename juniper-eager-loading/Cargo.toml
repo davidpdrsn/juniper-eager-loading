@@ -1,0 +1,13 @@
+[package]
+name = "juniper-eager-loading"
+version = "0.1.0"
+authors = ["David Pedersen <david.pdrsn@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+juniper-from-schema = { path = "/Users/davidpdrsn/dev/major/juniper-from-schema/juniper-from-schema" }
+
+[dev-dependencies]
+juniper = "^0.12"
+assert-json-diff = "1.0.0"
+serde_json = "1.0.39"

@@ -1,0 +1,5 @@
+[workspace]
+
+members = [
+    "juniper-eager-loading",
+]
