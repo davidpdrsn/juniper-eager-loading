@@ -14,7 +14,15 @@
 use juniper_from_schema::Walked;
 use std::fmt;
 
-pub use juniper_eager_loading_code_gen::EagerLoading;
+pub use juniper_eager_loading_code_gen::{LoadFromIds, EagerLoading};
+
+/// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
+pub mod prelude {
+    pub use super::EagerLoadAllChildren;
+    pub use super::EagerLoadChildrenOfType;
+    pub use super::EagerLoading;
+    pub use super::GraphqlNodeForModel;
+}
 
 #[derive(Debug, Copy, Clone)]
 pub enum DbEdgeError {
@@ -68,7 +76,6 @@ impl<T> DbEdge<T> {
 pub enum OptionDbEdge<T> {
     Loaded(Option<T>),
     NotLoaded,
-    LoadFailed,
 }
 
 impl<T> Default for OptionDbEdge<T> {
@@ -83,7 +90,6 @@ impl<T> OptionDbEdge<T> {
             OptionDbEdge::Loaded(Some(inner)) => OptionDbEdge::Loaded(Some(&inner)),
             OptionDbEdge::Loaded(None) => OptionDbEdge::Loaded(None),
             OptionDbEdge::NotLoaded => OptionDbEdge::NotLoaded,
-            OptionDbEdge::LoadFailed => OptionDbEdge::LoadFailed,
         }
     }
 
@@ -91,16 +97,11 @@ impl<T> OptionDbEdge<T> {
         match self {
             OptionDbEdge::Loaded(inner) => Ok(inner),
             OptionDbEdge::NotLoaded => Err(DbEdgeError::NotLoaded),
-            OptionDbEdge::LoadFailed => Err(DbEdgeError::LoadFailed),
         }
     }
 
-    pub fn loaded_or_failed(&mut self, inner: Option<Option<T>>) {
-        if let Some(inner) = inner {
-            std::mem::replace(self, OptionDbEdge::Loaded(inner));
-        } else {
-            std::mem::replace(self, OptionDbEdge::LoadFailed);
-        }
+    pub fn loaded_or_failed(&mut self, inner: Option<T>) {
+        std::mem::replace(self, OptionDbEdge::Loaded(inner));
     }
 }
 
@@ -144,7 +145,7 @@ where
 
     fn is_child_of(node: &Self, child: &Child) -> bool;
 
-    fn loaded_or_missing_child(node: &mut Self, child: Option<&Child>);
+    fn loaded_or_failed_child(node: &mut Self, child: Option<&Child>);
 
     fn eager_load_children(
         nodes: &mut [Self],
@@ -156,6 +157,7 @@ where
             .iter()
             .map(|model| Self::child_id(model))
             .collect::<Vec<_>>();
+
         let child_models = Self::load_children(&child_ids, db)?;
 
         let mut children = child_models
@@ -169,7 +171,7 @@ where
             let child = children
                 .iter()
                 .find(|child_model| Self::is_child_of(node, child_model));
-            Self::loaded_or_missing_child(node, child);
+            Self::loaded_or_failed_child(node, child);
         }
 
         Ok(())
@@ -208,8 +210,5 @@ pub trait LoadFromIds: Sized {
     type Error;
     type Connection;
 
-    fn load(
-        ids: &[Self::Id],
-        db: &Self::Connection,
-    ) -> Result<Vec<Self>, Self::Error>;
+    fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }

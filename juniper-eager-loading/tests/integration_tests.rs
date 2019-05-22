@@ -1,9 +1,6 @@
-use assert_json_diff::assert_json_eq;
+use assert_json_diff::{assert_json_include, assert_json_eq};
 use juniper::{Executor, FieldResult};
-use juniper_eager_loading::{
-    DbEdge, EagerLoadAllChildren, EagerLoadChildrenOfType, EagerLoading, GraphqlNodeForModel,
-    OptionDbEdge,
-};
+use juniper_eager_loading::{prelude::*, DbEdge, OptionDbEdge};
 use juniper_from_schema::{graphql_schema, Walked};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,14 +36,14 @@ graphql_schema! {
 }
 
 mod models {
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct User {
         pub id: i32,
         pub country_id: i32,
         pub city_id: Option<i32>,
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Country {
         pub id: i32,
     }
@@ -68,7 +65,7 @@ mod models {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct City {
         pub id: i32,
     }
@@ -136,7 +133,7 @@ impl MutationFields for Mutation {
     }
 }
 
-#[derive(Clone, EagerLoading)]
+#[derive(Clone, Debug, EagerLoading)]
 #[eager_loading(
     model = "models::User",
     id = "i32",
@@ -147,10 +144,10 @@ impl MutationFields for Mutation {
 pub struct User {
     user: models::User,
 
-    #[eager_loading(foreign_key_field = "country_id")]
+    #[eager_loading(foreign_key_field = "country_id", model = "models::Country")]
     country: DbEdge<Country>,
 
-    // foreign_key_field is optional
+    #[eager_loading(foreign_key_field = "city_id", model = "models::City")]
     city: OptionDbEdge<City>,
 }
 
@@ -186,7 +183,7 @@ impl UserFields for User {
     }
 }
 
-#[derive(Clone, EagerLoading)]
+#[derive(Clone, Debug, EagerLoading)]
 #[eager_loading(
     model = "models::Country",
     connection = "Db",
@@ -211,7 +208,7 @@ impl CountryFields for Country {
     }
 }
 
-#[derive(Clone, EagerLoading)]
+#[derive(Clone, Debug, EagerLoading)]
 #[eager_loading(
     model = "models::City",
     id = "i32",
@@ -243,15 +240,17 @@ fn loading_users() {
 
     assert_eq!(1, counts.user_reads);
 
-    assert_json_eq!(
-        json!({
+    assert_json_include!(
+        expected: json!({
             "users": [
                 { "id": 1 },
                 { "id": 2 },
                 { "id": 3 },
+                { "id": 4 },
+                { "id": 5 },
             ]
         }),
-        json,
+        actual: json,
     );
 }
 
@@ -279,6 +278,8 @@ fn loading_users_and_associations() {
                 { "id": 1, "country": { "id": 10 }, "city": { "id": 20 } },
                 { "id": 2, "country": { "id": 10 }, "city": { "id": 20 } },
                 { "id": 3, "country": { "id": 10 }, "city": { "id": 20 } },
+                { "id": 4, "country": { "id": 10 }, "city": null },
+                { "id": 5, "country": { "id": 10 }, "city": null },
             ]
         }),
         json,
@@ -325,6 +326,22 @@ fn run_query(query: &str) -> (Value, DbStats) {
             id: 3,
             country_id,
             city_id: Some(city_id),
+        },
+    );
+    users.insert(
+        4,
+        models::User {
+            id: 4,
+            country_id,
+            city_id: None,
+        },
+    );
+    users.insert(
+        5,
+        models::User {
+            id: 5,
+            country_id,
+            city_id: Some(999),
         },
     );
 

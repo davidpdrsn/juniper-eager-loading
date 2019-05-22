@@ -1,11 +1,11 @@
 use darling::{FromDeriveInput, FromMeta};
 use lazy_static::lazy_static;
-use proc_macro2::Span;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use std::sync::Mutex;
-use syn::{parse_macro_input, DeriveInput};
-use syn::{GenericArgument, Ident, NestedMeta, Path, PathArguments, PathSegment, Type};
+use std::sync::atomic::{AtomicBool, Ordering};
+use syn::{
+    parse_macro_input, DeriveInput, GenericArgument, Ident, NestedMeta, PathArguments, Type,
+};
 
 pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
@@ -23,16 +23,15 @@ pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 lazy_static! {
-    static ref FIRST_DERIVE_CALL: Mutex<bool> = { Mutex::new(true) };
+    static ref FIRST_DERIVE_CALL: AtomicBool = { AtomicBool::new(true) };
 }
 
 fn derive_macro_called() {
-    let mut lock = FIRST_DERIVE_CALL.lock().unwrap();
-    *lock = false;
+    FIRST_DERIVE_CALL.store(false, Ordering::SeqCst)
 }
 
 fn first_time_calling_derive_macro() -> bool {
-    *FIRST_DERIVE_CALL.lock().unwrap()
+    FIRST_DERIVE_CALL.load(Ordering::SeqCst)
 }
 
 #[derive(FromDeriveInput, Debug)]
@@ -43,18 +42,35 @@ struct Options {
     id: Option<syn::Path>,
     connection: syn::Path,
     error: syn::Path,
-    root_model_field: syn::Ident,
-}
-
-#[derive(FromMeta, Debug)]
-struct DbEdgeFieldOptions {
-    foreign_key_field: syn::Ident,
+    #[darling(default)]
+    root_model_field: Option<syn::Ident>,
 }
 
 struct DeriveData {
     input: DeriveInput,
     options: Options,
     tokens: TokenStream,
+}
+
+#[derive(FromMeta, Debug)]
+struct DbEdgeFieldOptions {
+    #[darling(default)]
+    foreign_key_field: Option<syn::Ident>,
+    model: syn::Path,
+}
+
+impl DbEdgeFieldOptions {
+    fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
+        self.foreign_key_field
+            .as_ref()
+            .map(|inner| quote! { #inner })
+            .unwrap_or_else(|| {
+                let field = field_name.to_string();
+                let field = format!("{}_id", field);
+                let field = Ident::new(&field, Span::call_site());
+                quote! { #field }
+            })
+    }
 }
 
 impl DeriveData {
@@ -94,6 +110,16 @@ impl DeriveData {
         let connection = self.connection();
         let error = self.error();
 
+        let field_setters = self.struct_fields().map(|field| {
+            let ident = &field.ident;
+
+            if is_db_edge_field(&field.ty).unwrap() {
+                quote! { #ident: Default::default() }
+            } else {
+                quote! { #ident: std::clone::Clone::clone(model) }
+            }
+        });
+
         self.tokens.extend(quote! {
             impl juniper_eager_loading::GraphqlNodeForModel for #struct_name {
                 type Model = #model;
@@ -102,7 +128,9 @@ impl DeriveData {
                 type Error = #error;
 
                 fn new_from_model(model: &Self::Model) -> Self {
-                    std::convert::From::from(model)
+                    Self {
+                        #(#field_setters),*
+                    }
                 }
             }
         });
@@ -125,16 +153,13 @@ impl DeriveData {
             panic!("Found `juniper_eager_loading::DbEdge` field without a name")
         });
 
-        let args = parse_field_args::<Option<DbEdgeFieldOptions>>(&field).unwrap();
-        let foreign_key_field = args.map(|args| {
-            let field = args.foreign_key_field;
-            quote! { #field }
-        }).unwrap_or_else(|| {
-            let field = Ident::new(&format!("{}_id", field_name), Span::call_site());
-            quote! { #field }
-        });
+        let args = parse_field_args::<DbEdgeFieldOptions>(&field).unwrap();
+
+        let foreign_key_field = &args.foreign_key_field(&field_name);
 
         let is_option_db_edge = is_option_db_edge(&field.ty)?;
+
+        let child_model = &args.model;
 
         let child_id = if is_option_db_edge {
             quote! { Option<Self::Id> }
@@ -152,27 +177,19 @@ impl DeriveData {
             }
         };
 
-        let loaded_or_missing_child_impl = if is_option_db_edge {
-            quote! {
-                node.#field_name.loaded_or_failed(child.map(|inner| Some(inner.clone())))
-            }
-        } else {
-            quote! {
-                node.#field_name.loaded_or_failed(child.cloned())
-            }
-        };
-
-        let filter_map_ids = if is_option_db_edge {
+        let load_children_impl = if is_option_db_edge {
             quote! {
                 let ids = ids
                     .into_iter()
                     .filter_map(|id| id.as_ref())
                     .map(|id| std::clone::Clone::clone(id))
                     .collect::<Vec<_>>();
-                let ids = ids.as_slice();
+                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
             }
         } else {
-            quote! {}
+            quote! {
+                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(ids, db)
+            }
         };
 
         Some(quote! {
@@ -180,7 +197,7 @@ impl DeriveData {
                 #inner_type,
                 QueryTrail<'a, #inner_type, juniper_from_schema::Walked>,
             > for #struct_name {
-                type ChildModel = models::#inner_type;
+                type ChildModel = #child_model;
                 type ChildId = #child_id;
 
                 fn child_id(model: &Self::Model) -> Self::ChildId {
@@ -191,16 +208,15 @@ impl DeriveData {
                     ids: &[Self::ChildId],
                     db: &Self::Connection,
                 ) -> Result<Vec<Self::ChildModel>, Self::Error> {
-                    #filter_map_ids
-                    <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(ids, db)
+                    #load_children_impl
                 }
 
                 fn is_child_of(node: &Self, child: &#inner_type) -> bool {
                     #is_child_of_impl
                 }
 
-                fn loaded_or_missing_child(node: &mut Self, child: Option<&#inner_type>) {
-                    #loaded_or_missing_child_impl
+                fn loaded_or_failed_child(node: &mut Self, child: Option<&#inner_type>) {
+                    node.#field_name.loaded_or_failed(child.cloned())
                 }
             }
         })
@@ -274,8 +290,18 @@ impl DeriveData {
         &self.options.error
     }
 
-    fn root_model_field(&self) -> &syn::Ident {
-        &self.options.root_model_field
+    fn root_model_field(&self) -> TokenStream {
+        use heck::SnakeCase;
+
+        self.options
+            .root_model_field
+            .as_ref()
+            .map(|inner| quote! { #inner })
+            .unwrap_or_else(|| {
+                let struct_name = self.struct_name().to_string().to_snake_case();
+                let struct_name = Ident::new(&struct_name, Span::call_site());
+                quote! { #struct_name }
+            })
     }
 
     fn struct_fields(&self) -> syn::punctuated::Iter<syn::Field> {
@@ -305,7 +331,7 @@ macro_rules! if_let_or_none {
     };
 }
 
-fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Ident> {
+fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
     if !is_db_edge_field(ty)? {
         return None;
     }
@@ -318,7 +344,8 @@ fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Ident> {
     let args = if_let_or_none!(PathArguments::AngleBracketed, &segment.arguments);
     let pair = if_let_or_none!(Some, args.args.last());
     let ty = if_let_or_none!(GenericArgument::Type, pair.value());
-    last_ident_in_type_segment(ty)
+
+    Some(ty)
 }
 
 fn is_db_edge_field(ty: &syn::Type) -> Option<bool> {
@@ -341,10 +368,9 @@ fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
     Some(&segment.ident)
 }
 
-fn parse_field_args<T: FromMeta + Default>(field: &syn::Field) -> Result<T, darling::Error> {
+fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error> {
     #[derive(FromMeta)]
-    struct FieldOptionsOuter<K: Default> {
-        #[darling(default)]
+    struct FieldOptionsOuter<K> {
         eager_loading: K,
     }
 
