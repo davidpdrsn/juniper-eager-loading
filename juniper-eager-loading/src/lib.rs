@@ -288,12 +288,57 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::NotLoaded => {
-                write!(f, "`DbEdge` should have been eager loaded, but wasn't")
-            }
+            Error::NotLoaded => write!(f, "`DbEdge` should have been eager loaded, but wasn't"),
             Error::LoadFailed => write!(f, "Failed to load `DbEdge`"),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+use std::any::{Any, TypeId};
+use std::{collections::HashMap, hash::Hash};
+
+#[derive(Debug)]
+pub struct DynamicCache<ValueKey: Hash + Eq>(HashMap<(Box<TypeId>, ValueKey), Box<Any>>);
+
+impl<ValueKey: Hash + Eq> DynamicCache<ValueKey> {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn insert<TypeKey, V>(&mut self, key: ValueKey, value: V)
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        let key = (Box::new(TypeId::of::<TypeKey>()), key);
+        self.0.insert(key, Box::new(value));
+    }
+
+    fn get<TypeKey, V>(&self, key: ValueKey) -> Option<&V>
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        let key = (Box::new(TypeId::of::<TypeKey>()), key);
+        self.0.get(&key).and_then(|value| value.downcast_ref())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[test]
+    fn test_dynamic_cache() {
+        let mut cache = DynamicCache::<&'static str>::new();
+
+        cache.insert::<i32, _>("key", 123);
+        cache.insert::<bool, _>("key", "bool value".to_string());
+
+        assert_eq!(Some(&123), cache.get::<i32, _>("key"));
+        assert_eq!(Some(&"bool value".to_string()), cache.get::<bool, _>("key"));
+    }
+}
