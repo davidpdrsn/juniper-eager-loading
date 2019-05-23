@@ -134,7 +134,7 @@ impl QueryFields for Query {
 pub struct Mutation;
 
 impl MutationFields for Mutation {
-    fn field_noop(&self, executor: &Executor<'_, Context>) -> FieldResult<&bool> {
+    fn field_noop(&self, _executor: &Executor<'_, Context>) -> FieldResult<&bool> {
         Ok(&true)
     }
 }
@@ -156,22 +156,22 @@ pub struct User {
 }
 
 impl UserFields for User {
-    fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.user.id)
     }
 
     fn field_country(
         &self,
-        executor: &Executor<'_, Context>,
-        trail: &QueryTrail<'_, Country, Walked>,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<&Country> {
         Ok(self.country.try_unwrap()?)
     }
 
     fn field_city(
         &self,
-        executor: &Executor<'_, Context>,
-        trail: &QueryTrail<'_, City, Walked>,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, City, Walked>,
     ) -> FieldResult<&Option<City>> {
         Ok(self.city.try_unwrap()?)
     }
@@ -196,14 +196,14 @@ pub struct Country {
 }
 
 impl CountryFields for Country {
-    fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.country.id)
     }
 
     fn field_cities(
         &self,
-        executor: &Executor<'_, Context>,
-        trail: &QueryTrail<'_, City, Walked>,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, City, Walked>,
     ) -> FieldResult<&Vec<City>> {
         Ok(self.cities.try_unwrap()?)
     }
@@ -224,14 +224,14 @@ pub struct City {
 }
 
 impl CityFields for City {
-    fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.city.id)
     }
 
     fn field_country(
         &self,
-        executor: &Executor<'_, Context>,
-        trail: &QueryTrail<'_, Country, Walked>,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<&Country> {
         Ok(self.country.try_unwrap()?)
     }
@@ -240,7 +240,7 @@ impl CityFields for City {
 #[test]
 fn loading_users() {
     let mut countries = StatsHash::default();
-    let mut cities = StatsHash::default();
+    let cities = StatsHash::default();
     let mut users = StatsHash::default();
 
     let mut country = models::Country {
@@ -529,6 +529,7 @@ impl<K: Hash + Eq, V> Default for StatsHash<K, V> {
 }
 
 impl<K: Hash + Eq, V> StatsHash<K, V> {
+    #[allow(dead_code)]
     fn get<Q>(&self, k: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
@@ -538,6 +539,7 @@ impl<K: Hash + Eq, V> StatsHash<K, V> {
         self.0.get(k)
     }
 
+    #[allow(dead_code)]
     pub fn get_mut<Q: ?Sized>(&mut self, k: &Q) -> Option<&mut V>
     where
         K: Borrow<Q>,

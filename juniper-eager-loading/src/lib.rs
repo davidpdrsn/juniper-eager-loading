@@ -13,6 +13,7 @@
 
 use juniper_from_schema::Walked;
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub use juniper_eager_loading_code_gen::EagerLoading;
 
@@ -363,7 +364,7 @@ impl<K: Hash + Eq> Cache<K> {
     {
         match self {
             Cache::NoCaching => {}
-            Cache::Cache(cache) => cache.map.insert::<TypeKey, _>(key, value),
+            Cache::Cache(cache) => cache.insert::<TypeKey, _>(key, value),
         }
     }
 
@@ -374,7 +375,36 @@ impl<K: Hash + Eq> Cache<K> {
     {
         match self {
             Cache::NoCaching => None,
-            Cache::Cache(cache) => cache.map.get::<TypeKey, _>(key),
+            Cache::Cache(cache) => cache.get::<TypeKey, _>(key),
+        }
+    }
+
+    pub fn hits(&self) -> usize {
+        match self {
+            Cache::NoCaching => 0,
+            Cache::Cache(cache) => cache.hits(),
+        }
+    }
+
+    pub fn misses(&self) -> usize {
+        match self {
+            Cache::NoCaching => 0,
+            Cache::Cache(cache) => cache.misses(),
+        }
+    }
+
+    pub fn hit_rate(&self) -> f32 {
+        match self {
+            Cache::NoCaching => 0.,
+            Cache::Cache(cache) => {
+                let hits = self.hits() as f32;
+                let misses = self.misses() as f32;
+                if hits == 0. && misses == 0. {
+                    0.
+                } else {
+                    hits / (hits + misses)
+                }
+            },
         }
     }
 }
@@ -390,13 +420,49 @@ impl<K: Hash + Eq> Default for Cache<K> {
 #[derive(Debug)]
 pub struct CacheInner<K: Hash + Eq> {
     map: DynamicCache<K>,
+    hits: AtomicUsize,
+    misses: AtomicUsize,
 }
 
 impl<K: Hash + Eq> Default for CacheInner<K> {
     fn default() -> Self {
         CacheInner {
             map: DynamicCache::new(),
+            hits: AtomicUsize::new(0),
+            misses: AtomicUsize::new(0),
         }
+    }
+}
+
+impl<K: Hash + Eq> CacheInner<K> {
+    fn insert<TypeKey, V>(&mut self, key: K, value: V)
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        self.map.insert::<TypeKey, _>(key, value)
+    }
+
+    fn get<TypeKey, V>(&self, key: K) -> Option<&V>
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        let res = self.map.get::<TypeKey, _>(key);
+        if res.is_some() {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+        } else {
+            self.misses.fetch_add(1, Ordering::SeqCst);
+        }
+        res
+    }
+
+    fn hits(&self) -> usize {
+        self.hits.load(Ordering::Relaxed)
+    }
+
+    fn misses(&self) -> usize {
+        self.misses.load(Ordering::Relaxed)
     }
 }
 
