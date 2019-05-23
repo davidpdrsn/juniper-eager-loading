@@ -147,7 +147,7 @@ impl<T> VecDbEdge<T> {
 
 pub trait GraphqlNodeForModel: Sized {
     type Model;
-    type Id;
+    type Id: Hash + Eq;
     type Connection;
     type Error;
 
@@ -170,6 +170,7 @@ where
             Model = Self::ChildModel,
             Connection = Self::Connection,
             Error = Self::Error,
+            Id = Self::Id,
         > + EagerLoadAllChildren<Q>,
     Q: GenericQueryTrail<Child, Walked>,
 {
@@ -187,25 +188,49 @@ where
 
     fn loaded_or_failed_child(node: &mut Self, child: Option<&Child>);
 
+    fn load_from_cache(
+        ids: &[Self::ChildId],
+        cache: &Cache<Self::Id>,
+    ) -> Vec<LoadResult<Self::ChildModel, Self::ChildId>>;
+
+    fn store_in_cache(child: &Self::ChildModel, cache: &mut Cache<Self::Id>);
+
     fn eager_load_children(
         nodes: &mut [Self],
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &Q,
+        cache: &mut Cache<Self::Id>,
     ) -> Result<(), Self::Error> {
         let child_ids = models
             .iter()
             .map(|model| Self::child_id(model))
             .collect::<Vec<_>>();
 
-        let child_models = Self::load_children(&child_ids, db)?;
+        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
+        let mut child_models = vec![];
+        let mut ids_to_load = vec![];
+        for result in cached_child_models {
+            match result {
+                LoadResult::Loaded(model) => child_models.push(model),
+                LoadResult::Missing(id) => ids_to_load.push(id),
+            }
+        }
+
+        if !ids_to_load.is_empty() {
+            let loaded_models = Self::load_children(&ids_to_load, db)?;
+            for model in &loaded_models {
+                Self::store_in_cache(model, cache);
+            }
+            child_models.extend(loaded_models);
+        }
 
         let mut children = child_models
             .iter()
             .map(|child_model| Child::new_from_model(child_model))
             .collect::<Vec<_>>();
 
-        Child::eager_load_all_children_for_each(&mut children, &child_models, db, trail)?;
+        Child::eager_load_all_children_for_each(&mut children, &child_models, db, trail, cache)?;
 
         for node in nodes {
             let child = children
@@ -218,6 +243,12 @@ where
     }
 }
 
+#[derive(Debug)]
+pub enum LoadResult<A, B> {
+    Loaded(A),
+    Missing(B),
+}
+
 pub trait EagerLoadAllChildren<Q>
 where
     Self: GraphqlNodeForModel,
@@ -227,16 +258,28 @@ where
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &Q,
+        cache: &mut Cache<Self::Id>,
     ) -> Result<(), Self::Error>;
+
+    fn eager_load_all_children_for_each_without_cache(
+        nodes: &mut [Self],
+        models: &[Self::Model],
+        db: &Self::Connection,
+        trail: &Q,
+    ) -> Result<(), Self::Error> {
+        let mut cache = Cache::disabled();
+        Self::eager_load_all_children_for_each(nodes, models, db, trail, &mut cache)
+    }
 
     fn eager_load_all_chilren(
         node: Self,
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &Q,
+        cache: &mut Cache<Self::Id>,
     ) -> Result<Self, Self::Error> {
         let mut nodes = vec![node];
-        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail)?;
+        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail, cache)?;
 
         // This is safe because we just made a vec with exactly one element and
         // eager_load_all_children_for_each doesn't remove things from the vec
@@ -296,13 +339,79 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+#[derive(Debug)]
+pub enum Cache<K: Hash + Eq> {
+    #[doc(hidden)]
+    NoCaching,
+    #[doc(hidden)]
+    Cache(CacheInner<K>),
+}
+
+impl<K: Hash + Eq> Cache<K> {
+    pub fn new() -> Self {
+        Cache::Cache(CacheInner::default())
+    }
+
+    pub fn disabled() -> Self {
+        Cache::NoCaching
+    }
+
+    pub fn insert<TypeKey, V>(&mut self, key: K, value: V)
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        match self {
+            Cache::NoCaching => {}
+            Cache::Cache(cache) => cache.map.insert::<TypeKey, _>(key, value),
+        }
+    }
+
+    pub fn get<TypeKey, V>(&self, key: K) -> Option<&V>
+    where
+        TypeKey: 'static + ?Sized,
+        V: 'static,
+    {
+        match self {
+            Cache::NoCaching => None,
+            Cache::Cache(cache) => cache.map.get::<TypeKey, _>(key),
+        }
+    }
+}
+
+/// It defaults to not performing any caching
+impl<K: Hash + Eq> Default for Cache<K> {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct CacheInner<K: Hash + Eq> {
+    map: DynamicCache<K>,
+}
+
+impl<K: Hash + Eq> Default for CacheInner<K> {
+    fn default() -> Self {
+        CacheInner {
+            map: DynamicCache::new(),
+        }
+    }
+}
+
 use std::any::{Any, TypeId};
 use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug)]
-pub struct DynamicCache<ValueKey: Hash + Eq>(HashMap<(Box<TypeId>, ValueKey), Box<Any>>);
+struct DynamicCache<ValueKey>(HashMap<(Box<TypeId>, ValueKey), Box<Any>>)
+where
+    ValueKey: Hash + Eq;
 
-impl<ValueKey: Hash + Eq> DynamicCache<ValueKey> {
+impl<ValueKey> DynamicCache<ValueKey>
+where
+    ValueKey: Hash + Eq,
+{
     fn new() -> Self {
         Self(HashMap::new())
     }

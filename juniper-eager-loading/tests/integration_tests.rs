@@ -1,6 +1,6 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use juniper::{Executor, FieldResult};
-use juniper_eager_loading::{prelude::*, DbEdge, EagerLoading, OptionDbEdge, VecDbEdge};
+use juniper_eager_loading::{prelude::*, Cache, DbEdge, EagerLoading, OptionDbEdge, VecDbEdge};
 use juniper_from_schema::{graphql_schema, Walked};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -33,6 +33,7 @@ graphql_schema! {
 
     type City {
         id: Int!
+        country: Country!
     }
 }
 
@@ -50,6 +51,12 @@ mod models {
         pub city_ids: Vec<i32>,
     }
 
+    #[derive(Clone, Debug)]
+    pub struct City {
+        pub id: i32,
+        pub country_id: i32,
+    }
+
     impl juniper_eager_loading::LoadFromIds for Country {
         type Id = i32;
         type Error = Box<dyn std::error::Error>;
@@ -65,11 +72,6 @@ mod models {
                 .collect::<Vec<_>>();
             Ok(countries)
         }
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct City {
-        pub id: i32,
     }
 
     impl juniper_eager_loading::LoadFromIds for City {
@@ -121,7 +123,9 @@ impl QueryFields for Query {
         user_models.sort_by_key(|user| user.id);
 
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
+
+        let mut cache = Cache::new();
+        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail, &mut cache)?;
 
         Ok(users)
     }
@@ -145,10 +149,8 @@ impl MutationFields for Mutation {
 )]
 pub struct User {
     user: models::User,
-
     #[eager_loading(foreign_key_field = "country_id", model = "models::Country")]
     country: DbEdge<Country>,
-
     #[eager_loading(foreign_key_field = "city_id", model = "models::City")]
     city: OptionDbEdge<City>,
 }
@@ -217,27 +219,39 @@ impl CountryFields for Country {
 )]
 pub struct City {
     city: models::City,
+    #[eager_loading(foreign_key_field = "country_id", model = "models::Country")]
+    country: DbEdge<Country>,
 }
 
 impl CityFields for City {
     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.city.id)
     }
+
+    fn field_country(
+        &self,
+        executor: &Executor<'_, Context>,
+        trail: &QueryTrail<'_, Country, Walked>,
+    ) -> FieldResult<&Country> {
+        Ok(self.country.try_unwrap()?)
+    }
 }
 
 #[test]
 fn loading_users() {
-    let other_city = models::City { id: 30 };
-
     let mut countries = StatsHash::default();
-    let cities = StatsHash::default();
+    let mut cities = StatsHash::default();
     let mut users = StatsHash::default();
 
-    let country = models::Country {
+    let mut country = models::Country {
         id: 10,
-        city_ids: vec![other_city.id],
+        city_ids: vec![],
     };
     let country_id = country.id;
+
+    let other_city = models::City { id: 30, country_id };
+    country.city_ids.push(other_city.id);
+
     countries.insert(country_id, country);
 
     users.insert(
@@ -281,24 +295,27 @@ fn loading_users() {
 
 #[test]
 fn loading_users_and_associations() {
-    let other_city = models::City { id: 30 };
-    let other_city_id = other_city.id;
-
     let mut countries = StatsHash::default();
-    let country = models::Country {
+    let mut cities = StatsHash::default();
+    let mut users = StatsHash::default();
+
+    let mut country = models::Country {
         id: 10,
-        city_ids: vec![other_city.id],
+        city_ids: vec![],
     };
     let country_id = country.id;
+
+    let other_city = models::City { id: 30, country_id };
+    let other_city_id = other_city.id;
+    country.city_ids.push(other_city.id);
+
     countries.insert(country_id, country);
 
-    let mut cities = StatsHash::default();
-    let city = models::City { id: 20 };
+    let city = models::City { id: 20, country_id };
     let city_id = city.id;
     cities.insert(city_id, city);
     cities.insert(other_city.id, other_city);
 
-    let mut users = StatsHash::default();
     users.insert(
         1,
         models::User {
@@ -380,6 +397,91 @@ fn loading_users_and_associations() {
     assert_eq!(1, counts.user_reads);
     assert_eq!(1, counts.country_reads);
     assert_eq!(2, counts.city_reads);
+}
+
+#[test]
+fn test_caching() {
+    let mut users = StatsHash::default();
+    let mut countries = StatsHash::default();
+    let mut cities = StatsHash::default();
+
+    let mut country = models::Country {
+        id: 1,
+        city_ids: vec![],
+    };
+
+    let city = models::City {
+        id: 2,
+        country_id: country.id,
+    };
+
+    country.city_ids.push(city.id);
+
+    let user = models::User {
+        id: 3,
+        country_id: country.id,
+        city_id: Some(city.id),
+    };
+
+    users.insert(user.id, user);
+    countries.insert(country.id, country);
+    cities.insert(city.id, city);
+
+    let db = Db {
+        users,
+        countries,
+        cities,
+    };
+
+    let (json, counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                country {
+                    id
+                    cities {
+                        id
+                        country { id }
+                    }
+                }
+                city {
+                    id
+                    country { id }
+                }
+            }
+        }
+    "#,
+        db,
+    );
+
+    assert_json_eq!(
+        json!({
+            "users": [
+                {
+                    "id": 3,
+                    "city": {
+                        "id": 2,
+                        "country": { "id": 1 }
+                    },
+                    "country": {
+                        "id": 1,
+                        "cities": [
+                            {
+                                "id": 2,
+                                "country": { "id": 1 }
+                            },
+                        ],
+                    },
+                },
+            ]
+        }),
+        json,
+    );
+
+    assert_eq!(1, counts.user_reads);
+    assert_eq!(1, counts.country_reads);
+    assert_eq!(1, counts.city_reads);
 }
 
 struct DbStats {

@@ -75,11 +75,14 @@ impl DbEdgeFieldOptions {
     }
 
     fn root_model_field(&self, field_name: &Ident) -> TokenStream {
-        self.root_model_field.as_ref().map(|ident| {
-            quote! { #ident }
-        }).unwrap_or_else(|| {
-            quote! { #field_name }
-        })
+        self.root_model_field
+            .as_ref()
+            .map(|ident| {
+                quote! { #ident }
+            })
+            .unwrap_or_else(|| {
+                quote! { #field_name }
+            })
     }
 }
 
@@ -195,19 +198,57 @@ impl DeriveData {
             }
         };
 
-        let load_children_impl = if is_option_db_edge {
+        let normalize_ids = if is_option_db_edge {
             quote! {
                 let ids = ids.into_iter().filter_map(|id| id.as_ref()).cloned().collect::<Vec<_>>();
-                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
             }
         } else if is_vec_db_edge {
             quote! {
                 let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
-                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
+            }
+        } else {
+            quote! {}
+        };
+
+        let load_from_cache_impl = if is_option_db_edge {
+            quote! {
+                #normalize_ids
+                ids.into_iter().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::LoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        juniper_eager_loading::LoadResult::Missing(Some(id))
+                    }
+                }).collect::<Vec<_>>()
+            }
+        } else if is_vec_db_edge {
+            quote! {
+                #normalize_ids
+                ids.into_iter().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::LoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        let mut missing = Vec::with_capacity(1);
+                        missing.push(id);
+                        juniper_eager_loading::LoadResult::Missing(missing)
+                    }
+                }).collect::<Vec<_>>()
             }
         } else {
             quote! {
-                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(ids, db)
+                ids.into_iter().cloned().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::LoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        juniper_eager_loading::LoadResult::Missing(id)
+                    }
+                }).collect::<Vec<_>>()
             }
         };
 
@@ -227,7 +268,8 @@ impl DeriveData {
                     ids: &[Self::ChildId],
                     db: &Self::Connection,
                 ) -> Result<Vec<Self::ChildModel>, Self::Error> {
-                    #load_children_impl
+                    #normalize_ids
+                    <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
                 }
 
                 fn is_child_of(node: &Self, child: &#inner_type) -> bool {
@@ -236,6 +278,20 @@ impl DeriveData {
 
                 fn loaded_or_failed_child(node: &mut Self, child: Option<&#inner_type>) {
                     node.#field_name.loaded_or_failed(child.cloned())
+                }
+
+                fn load_from_cache(
+                    ids: &[Self::ChildId],
+                    cache: &juniper_eager_loading::Cache<Self::Id>,
+                ) -> Vec<juniper_eager_loading::LoadResult<Self::ChildModel, Self::ChildId>> {
+                    #load_from_cache_impl
+                }
+
+                fn store_in_cache(
+                    child: &Self::ChildModel,
+                    cache: &mut juniper_eager_loading::Cache<Self::Id>,
+                ) {
+                    cache.insert::<Self::ChildModel, _>(child.id, child.clone());
                 }
             }
         })
@@ -257,6 +313,7 @@ impl DeriveData {
                     models: &[Self::Model],
                     db: &Self::Connection,
                     trail: &QueryTrail<'a, Self, juniper_from_schema::Walked>,
+                    cache: &mut juniper_eager_loading::Cache<Self::Id>,
                 ) -> Result<(), Self::Error> {
                     #(#eager_load_children_calls)*
 
@@ -280,6 +337,7 @@ impl DeriveData {
                     models,
                     db,
                     &trail,
+                    cache,
                 )?;
             }
         })
