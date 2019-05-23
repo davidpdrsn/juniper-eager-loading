@@ -1,6 +1,6 @@
-use assert_json_diff::{assert_json_include, assert_json_eq};
+use assert_json_diff::{assert_json_eq, assert_json_include};
 use juniper::{Executor, FieldResult};
-use juniper_eager_loading::{prelude::*, DbEdge, OptionDbEdge};
+use juniper_eager_loading::{prelude::*, DbEdge, EagerLoading, OptionDbEdge, VecDbEdge};
 use juniper_from_schema::{graphql_schema, Walked};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,6 +28,7 @@ graphql_schema! {
 
     type Country {
         id: Int!
+        cities: [City!]!
     }
 
     type City {
@@ -46,6 +47,7 @@ mod models {
     #[derive(Clone, Debug)]
     pub struct Country {
         pub id: i32,
+        pub city_ids: Vec<i32>,
     }
 
     impl juniper_eager_loading::LoadFromIds for Country {
@@ -151,16 +153,6 @@ pub struct User {
     city: OptionDbEdge<City>,
 }
 
-impl From<&models::User> for User {
-    fn from(model: &models::User) -> Self {
-        Self {
-            user: model.clone(),
-            country: DbEdge::default(),
-            city: OptionDbEdge::default(),
-        }
-    }
-}
-
 impl UserFields for User {
     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.user.id)
@@ -192,19 +184,26 @@ impl UserFields for User {
 )]
 pub struct Country {
     country: models::Country,
-}
 
-impl From<&models::Country> for Country {
-    fn from(model: &models::Country) -> Self {
-        Self {
-            country: model.clone(),
-        }
-    }
+    #[eager_loading(
+        foreign_key_field = "city_ids",
+        root_model_field = "city",
+        model = "models::City"
+    )]
+    cities: VecDbEdge<City>,
 }
 
 impl CountryFields for Country {
     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.country.id)
+    }
+
+    fn field_cities(
+        &self,
+        executor: &Executor<'_, Context>,
+        trail: &QueryTrail<'_, City, Walked>,
+    ) -> FieldResult<&Vec<City>> {
+        Ok(self.cities.try_unwrap()?)
     }
 }
 
@@ -220,14 +219,6 @@ pub struct City {
     city: models::City,
 }
 
-impl From<&models::City> for City {
-    fn from(model: &models::City) -> Self {
-        Self {
-            city: model.clone(),
-        }
-    }
-}
-
 impl CityFields for City {
     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
         Ok(&self.city.id)
@@ -236,18 +227,52 @@ impl CityFields for City {
 
 #[test]
 fn loading_users() {
-    let (json, counts) = run_query("query Test { users { id } }");
+    let other_city = models::City { id: 30 };
+
+    let mut countries = StatsHash::default();
+    let cities = StatsHash::default();
+    let mut users = StatsHash::default();
+
+    let country = models::Country {
+        id: 10,
+        city_ids: vec![other_city.id],
+    };
+    let country_id = country.id;
+    countries.insert(country_id, country);
+
+    users.insert(
+        1,
+        models::User {
+            id: 1,
+            country_id,
+            city_id: None,
+        },
+    );
+    users.insert(
+        2,
+        models::User {
+            id: 2,
+            country_id,
+            city_id: None,
+        },
+    );
+
+    let db = Db {
+        users,
+        countries,
+        cities,
+    };
+    let (json, counts) = run_query("query Test { users { id } }", db);
 
     assert_eq!(1, counts.user_reads);
+    assert_eq!(0, counts.country_reads);
+    assert_eq!(0, counts.city_reads);
 
     assert_json_include!(
         expected: json!({
             "users": [
                 { "id": 1 },
                 { "id": 2 },
-                { "id": 3 },
-                { "id": 4 },
-                { "id": 5 },
             ]
         }),
         actual: json,
@@ -256,45 +281,14 @@ fn loading_users() {
 
 #[test]
 fn loading_users_and_associations() {
-    let (json, counts) = run_query(
-        r#"
-        query Test {
-            users {
-                id
-                country { id }
-                city { id }
-            }
-        }
-    "#,
-    );
+    let other_city = models::City { id: 30 };
+    let other_city_id = other_city.id;
 
-    assert_eq!(1, counts.user_reads);
-    assert_eq!(1, counts.country_reads);
-    assert_eq!(1, counts.city_reads);
-
-    assert_json_eq!(
-        json!({
-            "users": [
-                { "id": 1, "country": { "id": 10 }, "city": { "id": 20 } },
-                { "id": 2, "country": { "id": 10 }, "city": { "id": 20 } },
-                { "id": 3, "country": { "id": 10 }, "city": { "id": 20 } },
-                { "id": 4, "country": { "id": 10 }, "city": null },
-                { "id": 5, "country": { "id": 10 }, "city": null },
-            ]
-        }),
-        json,
-    );
-}
-
-struct DbStats {
-    user_reads: usize,
-    country_reads: usize,
-    city_reads: usize,
-}
-
-fn run_query(query: &str) -> (Value, DbStats) {
     let mut countries = StatsHash::default();
-    let country = models::Country { id: 10 };
+    let country = models::Country {
+        id: 10,
+        city_ids: vec![other_city.id],
+    };
     let country_id = country.id;
     countries.insert(country_id, country);
 
@@ -302,6 +296,7 @@ fn run_query(query: &str) -> (Value, DbStats) {
     let city = models::City { id: 20 };
     let city_id = city.id;
     cities.insert(city_id, city);
+    cities.insert(other_city.id, other_city);
 
     let mut users = StatsHash::default();
     users.insert(
@@ -309,7 +304,7 @@ fn run_query(query: &str) -> (Value, DbStats) {
         models::User {
             id: 1,
             country_id,
-            city_id: Some(city_id),
+            city_id: Some(other_city_id),
         },
     );
     users.insert(
@@ -345,13 +340,56 @@ fn run_query(query: &str) -> (Value, DbStats) {
         },
     );
 
-    let ctx = Context {
-        db: Db {
-            users,
-            countries,
-            cities,
-        },
+    let db = Db {
+        users,
+        countries,
+        cities,
     };
+
+    let (json, counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                country {
+                    id
+                    cities {
+                        id
+                    }
+                }
+                city { id }
+            }
+        }
+    "#,
+        db,
+    );
+
+    assert_json_eq!(
+        json!({
+            "users": [
+                { "id": 1, "country": { "id": 10, "cities": [{ "id": 30 }] }, "city": { "id": 30 } },
+                { "id": 2, "country": { "id": 10, "cities": [{ "id": 30 }] }, "city": { "id": 20 } },
+                { "id": 3, "country": { "id": 10, "cities": [{ "id": 30 }] }, "city": { "id": 20 } },
+                { "id": 4, "country": { "id": 10, "cities": [{ "id": 30 }] }, "city": null },
+                { "id": 5, "country": { "id": 10, "cities": [{ "id": 30 }] }, "city": null },
+            ]
+        }),
+        json,
+    );
+
+    assert_eq!(1, counts.user_reads);
+    assert_eq!(1, counts.country_reads);
+    assert_eq!(2, counts.city_reads);
+}
+
+struct DbStats {
+    user_reads: usize,
+    country_reads: usize,
+    city_reads: usize,
+}
+
+fn run_query(query: &str, db: Db) -> (Value, DbStats) {
+    let ctx = Context { db };
 
     let (result, errors) = juniper::execute(
         query,
@@ -396,6 +434,15 @@ impl<K: Hash + Eq, V> StatsHash<K, V> {
     {
         self.increment_reads_count();
         self.0.get(k)
+    }
+
+    pub fn get_mut<Q: ?Sized>(&mut self, k: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        self.increment_reads_count();
+        self.0.get_mut(k)
     }
 
     fn all_values(&self) -> Vec<&V> {

@@ -57,6 +57,8 @@ struct DbEdgeFieldOptions {
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     model: syn::Path,
+    #[darling(default)]
+    root_model_field: Option<syn::Ident>,
 }
 
 impl DbEdgeFieldOptions {
@@ -70,6 +72,14 @@ impl DbEdgeFieldOptions {
                 let field = Ident::new(&field, Span::call_site());
                 quote! { #field }
             })
+    }
+
+    fn root_model_field(&self, field_name: &Ident) -> TokenStream {
+        self.root_model_field.as_ref().map(|ident| {
+            quote! { #ident }
+        }).unwrap_or_else(|| {
+            quote! { #field_name }
+        })
     }
 }
 
@@ -149,41 +159,50 @@ impl DeriveData {
         let struct_name = self.struct_name();
         let root_model_field = self.root_model_field();
 
+        let args = parse_field_args::<DbEdgeFieldOptions>(&field).unwrap();
+
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
             panic!("Found `juniper_eager_loading::DbEdge` field without a name")
         });
-
-        let args = parse_field_args::<DbEdgeFieldOptions>(&field).unwrap();
+        let field_root_model_field = args.root_model_field(&field_name);
 
         let foreign_key_field = &args.foreign_key_field(&field_name);
 
         let is_option_db_edge = is_option_db_edge(&field.ty)?;
+        let is_vec_db_edge = is_vec_db_edge(&field.ty)?;
 
         let child_model = &args.model;
 
         let child_id = if is_option_db_edge {
             quote! { Option<Self::Id> }
+        } else if is_vec_db_edge {
+            quote! { Vec<Self::Id> }
         } else {
             quote! { Self::Id }
         };
 
         let is_child_of_impl = if is_option_db_edge {
             quote! {
-                node.#root_model_field.#foreign_key_field == Some(child.#field_name.id)
+                node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
+            }
+        } else if is_vec_db_edge {
+            quote! {
+                node.#root_model_field.#foreign_key_field.contains(&child.#field_root_model_field.id)
             }
         } else {
             quote! {
-                node.#root_model_field.#foreign_key_field == child.#field_name.id
+                node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
             }
         };
 
         let load_children_impl = if is_option_db_edge {
             quote! {
-                let ids = ids
-                    .into_iter()
-                    .filter_map(|id| id.as_ref())
-                    .map(|id| std::clone::Clone::clone(id))
-                    .collect::<Vec<_>>();
+                let ids = ids.into_iter().filter_map(|id| id.as_ref()).cloned().collect::<Vec<_>>();
+                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
+            }
+        } else if is_vec_db_edge {
+            quote! {
+                let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
                 <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
             }
         } else {
@@ -201,7 +220,7 @@ impl DeriveData {
                 type ChildId = #child_id;
 
                 fn child_id(model: &Self::Model) -> Self::ChildId {
-                    model.#foreign_key_field
+                    model.#foreign_key_field.clone()
                 }
 
                 fn load_children(
@@ -350,12 +369,18 @@ fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
 
 fn is_db_edge_field(ty: &syn::Type) -> Option<bool> {
     let res = *last_ident_in_type_segment(ty)? == "DbEdge"
-        || *last_ident_in_type_segment(ty)? == "OptionDbEdge";
+        || *last_ident_in_type_segment(ty)? == "OptionDbEdge"
+        || *last_ident_in_type_segment(ty)? == "VecDbEdge";
     Some(res)
 }
 
 fn is_option_db_edge(ty: &syn::Type) -> Option<bool> {
     let res = *last_ident_in_type_segment(ty)? == "OptionDbEdge";
+    Some(res)
+}
+
+fn is_vec_db_edge(ty: &syn::Type) -> Option<bool> {
+    let res = *last_ident_in_type_segment(ty)? == "VecDbEdge";
     Some(res)
 }
 

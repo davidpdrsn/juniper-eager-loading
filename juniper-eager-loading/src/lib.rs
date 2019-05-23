@@ -14,40 +14,33 @@
 use juniper_from_schema::Walked;
 use std::fmt;
 
-pub use juniper_eager_loading_code_gen::{LoadFromIds, EagerLoading};
+pub use juniper_eager_loading_code_gen::EagerLoading;
+
+/// Helpers related to Diesel. If you don't use Diesel you can ignore this.
+pub mod diesel {
+    pub use juniper_eager_loading_code_gen::LoadFromIds;
+}
 
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
 pub mod prelude {
     pub use super::EagerLoadAllChildren;
     pub use super::EagerLoadChildrenOfType;
-    pub use super::EagerLoading;
     pub use super::GraphqlNodeForModel;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum DbEdgeError {
-    NotLoaded,
-    LoadFailed,
-}
-
-impl fmt::Display for DbEdgeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DbEdgeError::NotLoaded => {
-                write!(f, "`DbEdge` should have been eager loaded, but wasn't")
-            }
-            DbEdgeError::LoadFailed => write!(f, "Failed to load `DbEdge`"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 pub enum DbEdge<T> {
+    /// The associated value was loaded.
     Loaded(T),
+
+    /// The associated value has not yet been loaded.
     NotLoaded,
+
+    /// The associated value should have been loaded, but something went wrong.
     LoadFailed,
 }
 
+/// Defaults to `DbEdge::NotLoaded`
 impl<T> Default for DbEdge<T> {
     fn default() -> Self {
         DbEdge::NotLoaded
@@ -55,14 +48,19 @@ impl<T> Default for DbEdge<T> {
 }
 
 impl<T> DbEdge<T> {
-    pub fn try_unwrap(&self) -> Result<&T, DbEdgeError> {
+    /// Borrow the loaded value or get an error if something went wrong.
+    pub fn try_unwrap(&self) -> Result<&T, Error> {
         match self {
             DbEdge::Loaded(inner) => Ok(inner),
-            DbEdge::NotLoaded => Err(DbEdgeError::NotLoaded),
-            DbEdge::LoadFailed => Err(DbEdgeError::LoadFailed),
+            DbEdge::NotLoaded => Err(Error::NotLoaded),
+            DbEdge::LoadFailed => Err(Error::LoadFailed),
         }
     }
 
+    /// Assign some potentially loaded value.
+    ///
+    /// If `inner` is a `Some` it will change `self` to `DbEdge::Loaded`, otherwise
+    /// `DbEdge::LoadFailed`.
     pub fn loaded_or_failed(&mut self, inner: Option<T>) {
         if let Some(inner) = inner {
             std::mem::replace(self, DbEdge::Loaded(inner));
@@ -74,7 +72,10 @@ impl<T> DbEdge<T> {
 
 #[derive(Debug, Clone)]
 pub enum OptionDbEdge<T> {
+    /// The associated value was loaded.
     Loaded(Option<T>),
+
+    /// The associated value has not yet been loaded.
     NotLoaded,
 }
 
@@ -85,29 +86,68 @@ impl<T> Default for OptionDbEdge<T> {
 }
 
 impl<T> OptionDbEdge<T> {
-    pub fn as_ref(&self) -> OptionDbEdge<&T> {
-        match self {
-            OptionDbEdge::Loaded(Some(inner)) => OptionDbEdge::Loaded(Some(&inner)),
-            OptionDbEdge::Loaded(None) => OptionDbEdge::Loaded(None),
-            OptionDbEdge::NotLoaded => OptionDbEdge::NotLoaded,
-        }
-    }
-
-    pub fn try_unwrap(&self) -> Result<&Option<T>, DbEdgeError> {
+    /// Borrow the loaded value or get an error if something went wrong.
+    pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         match self {
             OptionDbEdge::Loaded(inner) => Ok(inner),
-            OptionDbEdge::NotLoaded => Err(DbEdgeError::NotLoaded),
+            OptionDbEdge::NotLoaded => Err(Error::NotLoaded),
         }
     }
 
+    /// Assign some potentially loaded value.
+    ///
+    /// If `inner` is a `Some` it will change `self` to `OptionDbEdge::Loaded(Some(_))`, otherwise
+    /// `OptionDbEdge::Loaded(None)`. This means it ignores loads that failed.
     pub fn loaded_or_failed(&mut self, inner: Option<T>) {
         std::mem::replace(self, OptionDbEdge::Loaded(inner));
     }
 }
 
+impl<T> Default for VecDbEdge<T> {
+    fn default() -> Self {
+        VecDbEdge::NotLoaded
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VecDbEdge<T> {
+    /// The associated values were loaded.
+    Loaded(Vec<T>),
+
+    /// The associated values has not yet been loaded.
+    NotLoaded,
+}
+
+impl<T> VecDbEdge<T> {
+    pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
+        match self {
+            VecDbEdge::Loaded(inner) => Ok(inner),
+            VecDbEdge::NotLoaded => Err(Error::NotLoaded),
+        }
+    }
+
+    pub fn loaded_or_failed(&mut self, inner: Option<T>) {
+        match self {
+            VecDbEdge::Loaded(models) => {
+                if let Some(inner) = inner {
+                    models.push(inner)
+                }
+            }
+            VecDbEdge::NotLoaded => {
+                let loaded = if let Some(inner) = inner {
+                    VecDbEdge::Loaded(vec![inner])
+                } else {
+                    VecDbEdge::Loaded(vec![])
+                };
+                std::mem::replace(self, loaded);
+            }
+        }
+    }
+}
+
 pub trait GraphqlNodeForModel: Sized {
     type Model;
-    type Id: Clone;
+    type Id;
     type Connection;
     type Error;
 
@@ -204,11 +244,56 @@ where
     }
 }
 
-// TODO: Add derive for this what works with Diesel
+/// Given a list of ids how should they be loaded from the data store?
+///
+/// If you're using Diesel and PostgreSQL this could for example be implemented using [`any`] (or
+/// derived, see below).
+///
+/// ### `#[derive(LoadFromIds)]`
+///
+/// TODO
+///
+/// [`any`]: http://docs.diesel.rs/diesel/pg/expression/dsl/fn.any.html
 pub trait LoadFromIds: Sized {
+    /// The primary key type your model uses.
+    ///
+    /// If you're using Diesel this will normally be i32 or i64 but can be whatever you need.
     type Id;
+
+    /// The error type the operation uses.
+    ///
+    /// If you're using Diesel this should be [`diesel::result::Error`].
+    ///
+    /// [`diesel::result::Error`]: http://docs.diesel.rs/diesel/result/enum.Error.html
     type Error;
+
+    /// The connection type you use.
+    ///
+    /// If you're using Diesel this will could for example be [`PgConnection`].
+    ///
+    /// [`PgConnection`]: http://docs.diesel.rs/diesel/pg/struct.PgConnection.html
     type Connection;
 
+    /// Perform the load.
     fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
+
+#[derive(Debug)]
+#[allow(missing_copy_implementations)]
+pub enum Error {
+    NotLoaded,
+    LoadFailed,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::NotLoaded => {
+                write!(f, "`DbEdge` should have been eager loaded, but wasn't")
+            }
+            Error::LoadFailed => write!(f, "Failed to load `DbEdge`"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
