@@ -2,7 +2,7 @@ use darling::{FromDeriveInput, FromMeta};
 use lazy_static::lazy_static;
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::sync::atomic::{Ordering, AtomicBool};
+use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{parse_macro_input, DeriveInput, GenericArgument, NestedMeta, PathArguments, Type};
 
 pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

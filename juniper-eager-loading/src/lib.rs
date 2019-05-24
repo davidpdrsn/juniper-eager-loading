@@ -404,7 +404,7 @@ impl<K: Hash + Eq> Cache<K> {
                 } else {
                     hits / (hits + misses)
                 }
-            },
+            }
         }
     }
 }
@@ -508,7 +508,7 @@ mod test {
 
     #[test]
     fn test_dynamic_cache() {
-        let mut cache = DynamicCache::<&'static str>::new();
+        let mut cache = DynamicCache::new();
 
         cache.insert::<i32, _>("key", 123);
         cache.insert::<bool, _>("key", "bool value".to_string());

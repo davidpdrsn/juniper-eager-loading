@@ -1,7 +1,7 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use juniper::{Executor, FieldResult};
 use juniper_eager_loading::{prelude::*, Cache, DbEdge, EagerLoading, OptionDbEdge, VecDbEdge};
-use juniper_from_schema::{graphql_schema, Walked};
+use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
