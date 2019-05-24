@@ -1,14 +1,9 @@
 [package]
 name = "juniper-eager-loading"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["David Pedersen <david.pdrsn@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "Reserved for future use"
 
 [dependencies]
-juniper-from-schema = "0.2.1"
-juniper-eager-loading-code-gen = { path = "../juniper-eager-loading-code-gen" }
-
-[dev-dependencies]
-juniper = "^0.12"
-assert-json-diff = "1.0.0"
-serde_json = "1.0.39"
