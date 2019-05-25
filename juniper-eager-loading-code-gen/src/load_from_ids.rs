@@ -26,6 +26,8 @@ struct Options {
     #[darling(default)]
     connection: Option<syn::Path>,
     table: syn::Path,
+    #[darling(default)]
+    error: Option<syn::Path>,
 }
 
 struct DeriveData {
@@ -48,11 +50,12 @@ impl DeriveData {
         let id = self.id();
         let connection = self.connection();
         let table = self.table();
+        let error = self.error();
 
         self.tokens.extend(quote! {
             impl juniper_eager_loading::LoadFromIds for #struct_name {
                 type Id = #id;
-                type Error = diesel::result::Error;
+                type Error = #error;
                 type Connection = #connection;
 
                 fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
@@ -61,6 +64,7 @@ impl DeriveData {
                     #table::table
                         .filter(#table::id.eq(any(ids)))
                         .load::<#struct_name>(db)
+                        .map_err(std::convert::From::from)
                 }
             }
         });
@@ -90,5 +94,13 @@ impl DeriveData {
 
     fn table(&self) -> &syn::Path {
         &self.options.table
+    }
+
+    fn error(&self) -> TokenStream {
+        self.options
+            .error
+            .as_ref()
+            .map(|inner| quote! { #inner })
+            .unwrap_or_else(|| quote! { diesel::result::Error })
     }
 }

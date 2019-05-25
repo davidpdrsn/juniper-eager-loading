@@ -164,7 +164,7 @@ pub trait GraphqlNodeForModel: Sized {
 
 pub trait GenericQueryTrail<T, K> {}
 
-pub trait EagerLoadChildrenOfType<Child, Q, C = ()>
+pub trait EagerLoadChildrenOfType<Child, Q, C>
 where
     Self: GraphqlNodeForModel,
     Child: GraphqlNodeForModel<

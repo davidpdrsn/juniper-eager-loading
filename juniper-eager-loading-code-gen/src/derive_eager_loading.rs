@@ -1,4 +1,5 @@
 use darling::{FromDeriveInput, FromMeta};
+use heck::{CamelCase, SnakeCase};
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -252,10 +253,16 @@ impl DeriveData {
             }
         };
 
+        let context = self.field_context_name(&field);
+
         Some(quote! {
+            #[allow(missing_doc, dead_code)]
+            struct #context;
+
             impl<'a> EagerLoadChildrenOfType<
                 #inner_type,
                 QueryTrail<'a, #inner_type, juniper_from_schema::Walked>,
+                #context,
             > for #struct_name {
                 type ChildModel = #child_model;
                 type ChildId = #child_id;
@@ -330,9 +337,11 @@ impl DeriveData {
             panic!("Found `juniper_eager_loading::DbEdge` field without a name")
         });
 
+        let context = self.field_context_name(&field);
+
         Some(quote! {
             if let Some(trail) = trail.#field_name().walk() {
-                EagerLoadChildrenOfType::<#inner_type, _>::eager_load_children(
+                EagerLoadChildrenOfType::<#inner_type, _, #context>::eager_load_children(
                     nodes,
                     models,
                     db,
@@ -368,8 +377,6 @@ impl DeriveData {
     }
 
     fn root_model_field(&self) -> TokenStream {
-        use heck::SnakeCase;
-
         self.options
             .root_model_field
             .as_ref()
@@ -395,6 +402,17 @@ impl DeriveData {
                 }
             },
         }
+    }
+
+    fn field_context_name(&self, field: &syn::Field) -> Ident {
+        let camel_name = field
+            .ident
+            .as_ref()
+            .expect("field without name")
+            .to_string()
+            .to_camel_case();
+        let full_name = format!("EagerLoadingContext{}For{}", self.struct_name(), camel_name);
+        Ident::new(&full_name, Span::call_site())
     }
 }
 
