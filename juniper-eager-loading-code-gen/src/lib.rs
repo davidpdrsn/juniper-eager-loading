@@ -1,6 +1,7 @@
 //! See the docs for "juniper-eager-loading" for more info about this.
 
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
+#![deny(unused_variables, dead_code, unused_must_use, unused_import)]
 
 extern crate proc_macro;
 extern crate proc_macro2;

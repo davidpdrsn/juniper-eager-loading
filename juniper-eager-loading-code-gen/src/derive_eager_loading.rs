@@ -3,6 +3,7 @@ use heck::{CamelCase, SnakeCase};
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
+use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{
     parse_macro_input, DeriveInput, GenericArgument, Ident, NestedMeta, PathArguments, Type,
@@ -60,6 +61,14 @@ struct DbEdgeFieldOptions {
     model: syn::Path,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
+    #[darling(default)]
+    association_type: Option<AssociationType>,
+}
+
+#[derive(FromMeta, Copy, Clone, Debug)]
+enum AssociationType {
+    OneToMany,
+    ManyToMany,
 }
 
 impl DbEdgeFieldOptions {
@@ -84,6 +93,25 @@ impl DbEdgeFieldOptions {
             .unwrap_or_else(|| {
                 quote! { #field_name }
             })
+    }
+
+    fn association_type(&self, field: &syn::Field) -> Option<AssociationType> {
+        match (is_vec_db_edge(&field.ty)?, self.association_type) {
+            (true, Some(ty)) => Some(ty),
+            (true, None) => Some(AssociationType::OneToMany),
+
+            (false, Some(_)) => {
+                let mut f = String::new();
+                writeln!(
+                    f,
+                    "Only `VecDbEdge` fields support `association_type` attributes"
+                )
+                .unwrap();
+                writeln!(f, "Type was `{}`", type_to_string(&field.ty)).unwrap();
+                panic!("{}", f);
+            }
+            (false, None) => None,
+        }
     }
 }
 
@@ -127,7 +155,7 @@ impl DeriveData {
         let field_setters = self.struct_fields().map(|field| {
             let ident = &field.ident;
 
-            if is_db_edge_field(&field.ty).unwrap() {
+            if is_db_edge_field(&field.ty) {
                 quote! { #ident: Default::default() }
             } else {
                 quote! { #ident: std::clone::Clone::clone(model) }
@@ -160,98 +188,34 @@ impl DeriveData {
 
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
         let inner_type = get_type_from_db_edge(&field.ty)?;
+
         let struct_name = self.struct_name();
-        let root_model_field = self.root_model_field();
 
         let args = parse_field_args::<DbEdgeFieldOptions>(&field).unwrap();
 
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
             panic!("Found `juniper_eager_loading::DbEdge` field without a name")
         });
-        let field_root_model_field = args.root_model_field(&field_name);
 
-        let foreign_key_field = &args.foreign_key_field(&field_name);
-
-        let is_option_db_edge = is_option_db_edge(&field.ty)?;
-        let is_vec_db_edge = is_vec_db_edge(&field.ty)?;
+        let data = FieldDeriveData {
+            field_name,
+            inner_type,
+            root_model_field: self.root_model_field(),
+            foreign_key_field: args.foreign_key_field(&field_name),
+            field_root_model_field: args.root_model_field(&field_name),
+            association_type: args.association_type(field),
+            is_vec_db_edge: is_vec_db_edge(&field.ty)?,
+            is_option_db_edge: is_option_db_edge(&field.ty)?,
+        };
 
         let child_model = &args.model;
-
-        let child_id = if is_option_db_edge {
-            quote! { Option<Self::Id> }
-        } else if is_vec_db_edge {
-            quote! { Vec<Self::Id> }
-        } else {
-            quote! { Self::Id }
-        };
-
-        let is_child_of_impl = if is_option_db_edge {
-            quote! {
-                node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
-            }
-        } else if is_vec_db_edge {
-            quote! {
-                node.#root_model_field.#foreign_key_field.contains(&child.#field_root_model_field.id)
-            }
-        } else {
-            quote! {
-                node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
-            }
-        };
-
-        let normalize_ids = if is_option_db_edge {
-            quote! {
-                let ids = ids.into_iter().filter_map(|id| id.as_ref()).cloned().collect::<Vec<_>>();
-            }
-        } else if is_vec_db_edge {
-            quote! {
-                let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
-            }
-        } else {
-            quote! {}
-        };
-
-        let load_from_cache_impl = if is_option_db_edge {
-            quote! {
-                #normalize_ids
-                ids.into_iter().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::LoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        juniper_eager_loading::LoadResult::Missing(Some(id))
-                    }
-                }).collect::<Vec<_>>()
-            }
-        } else if is_vec_db_edge {
-            quote! {
-                #normalize_ids
-                ids.into_iter().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::LoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        let mut missing = Vec::with_capacity(1);
-                        missing.push(id);
-                        juniper_eager_loading::LoadResult::Missing(missing)
-                    }
-                }).collect::<Vec<_>>()
-            }
-        } else {
-            quote! {
-                ids.into_iter().cloned().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::LoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        juniper_eager_loading::LoadResult::Missing(id)
-                    }
-                }).collect::<Vec<_>>()
-            }
-        };
+        let child_id = self.child_id(&data);
+        let child_ids_impl = self.child_ids_impl(&data);
+        let load_children_impl = self.load_children_impl(&data);
+        let load_from_cache_impl = self.load_from_cache_impl(&data);
+        let is_child_of_impl = self.is_child_of_impl(&data);
+        let loaded_or_failed_child_impl = self.loaded_or_failed_child_impl(&data);
+        let store_in_cache_impl = self.store_in_cache_impl(&data);
 
         let context = self.field_context_name(&field);
 
@@ -267,41 +231,225 @@ impl DeriveData {
                 type ChildModel = #child_model;
                 type ChildId = #child_id;
 
-                fn child_id(model: &Self::Model) -> Self::ChildId {
-                    model.#foreign_key_field.clone()
-                }
-
-                fn load_children(
-                    ids: &[Self::ChildId],
-                    db: &Self::Connection,
-                ) -> Result<Vec<Self::ChildModel>, Self::Error> {
-                    #normalize_ids
-                    <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
-                }
-
-                fn is_child_of(node: &Self, child: &#inner_type) -> bool {
-                    #is_child_of_impl
-                }
-
-                fn loaded_or_failed_child(node: &mut Self, child: Option<&#inner_type>) {
-                    node.#field_name.loaded_or_failed(child.cloned())
-                }
-
-                fn load_from_cache(
-                    ids: &[Self::ChildId],
-                    cache: &juniper_eager_loading::Cache<Self::Id>,
-                ) -> Vec<juniper_eager_loading::LoadResult<Self::ChildModel, Self::ChildId>> {
-                    #load_from_cache_impl
-                }
-
-                fn store_in_cache(
-                    child: &Self::ChildModel,
-                    cache: &mut juniper_eager_loading::Cache<Self::Id>,
-                ) {
-                    cache.insert::<Self::ChildModel, _>(child.id, child.clone());
-                }
+                #child_ids_impl
+                #load_children_impl
+                #load_from_cache_impl
+                #is_child_of_impl
+                #loaded_or_failed_child_impl
+                #store_in_cache_impl
             }
         })
+    }
+
+    fn child_ids_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let foreign_key_field = &data.foreign_key_field;
+
+        let child_ids_from_field = quote! {
+            let ids = models
+                .iter()
+                .map(|model| model.#foreign_key_field.clone())
+                .collect::<Vec<_>>();
+            Ok(juniper_eager_loading::LoadResult::Ids(ids))
+        };
+
+        let child_ids_impl = if data.is_vec_db_edge {
+            let association_type = data.association_type();
+
+            match association_type {
+                AssociationType::OneToMany => child_ids_from_field,
+                AssociationType::ManyToMany => {
+                    quote! {
+                        let models = <
+                            Self::ChildModel
+                            as
+                            juniper_eager_loading::LoadFromModels<Self::Model>
+                        >::load(
+                            models,
+                            db,
+                        )?;
+                        Ok(juniper_eager_loading::LoadResult::Models(models))
+                    }
+                }
+            }
+        } else {
+            child_ids_from_field
+        };
+
+        quote! {
+            #[allow(unused_variables)]
+            fn child_ids(
+                models: &[Self::Model],
+                db: &Self::Connection,
+            ) -> Result<
+                juniper_eager_loading::LoadResult<Self::ChildModel, Self::ChildId>,
+                Self::Error,
+            > {
+                #child_ids_impl
+            }
+        }
+    }
+
+    fn load_children_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let normalize_ids = self.normalize_ids(data);
+
+        quote! {
+            fn load_children(
+                ids: &[Self::ChildId],
+                db: &Self::Connection,
+            ) -> Result<Vec<Self::ChildModel>, Self::Error> {
+                #normalize_ids
+                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
+            }
+        }
+    }
+
+    fn normalize_ids(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        if data.is_option_db_edge {
+            quote! {
+                let ids = ids
+                    .into_iter()
+                    .filter_map(|id| id .as_ref())
+                    .cloned()
+                    .collect::<Vec<_>>();
+            }
+        } else if data.is_vec_db_edge {
+            quote! {
+                let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
+            }
+        } else {
+            quote! {}
+        }
+    }
+
+    fn load_from_cache_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let normalize_ids = self.normalize_ids(data);
+
+        let load_from_cache_impl = if data.is_option_db_edge {
+            quote! {
+                #normalize_ids
+                ids.into_iter().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::CacheLoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        juniper_eager_loading::CacheLoadResult::Missing(Some(id))
+                    }
+                }).collect::<Vec<_>>()
+            }
+        } else if data.is_vec_db_edge {
+            quote! {
+                #normalize_ids
+                ids.into_iter().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::CacheLoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        let mut missing = Vec::with_capacity(1);
+                        missing.push(id);
+                        juniper_eager_loading::CacheLoadResult::Missing(missing)
+                    }
+                }).collect::<Vec<_>>()
+            }
+        } else {
+            quote! {
+                ids.into_iter().cloned().map(|id| {
+                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                        juniper_eager_loading::CacheLoadResult::Loaded(
+                            std::clone::Clone::clone(model)
+                        )
+                    } else {
+                        juniper_eager_loading::CacheLoadResult::Missing(id)
+                    }
+                }).collect::<Vec<_>>()
+            }
+        };
+
+        quote! {
+            fn load_from_cache(
+                ids: &[Self::ChildId],
+                cache: &juniper_eager_loading::Cache<Self::Id>,
+            ) -> Vec<
+                juniper_eager_loading::CacheLoadResult<Self::ChildModel, Self::ChildId>
+            > {
+                #load_from_cache_impl
+            }
+        }
+    }
+
+    fn is_child_of_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let root_model_field = &data.root_model_field;
+        let foreign_key_field = &data.foreign_key_field;
+        let field_root_model_field = &data.field_root_model_field;
+        let inner_type = &data.inner_type;
+
+        let is_child_of_impl = if data.is_option_db_edge {
+            quote! {
+                node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
+            }
+        } else if data.is_vec_db_edge {
+            let association_type = data.association_type();
+
+            match association_type {
+                AssociationType::OneToMany => {
+                    quote! {
+                        node
+                            .#root_model_field
+                            .#foreign_key_field
+                            .contains(&child.#field_root_model_field.id)
+                    }
+                }
+                AssociationType::ManyToMany => {
+                    quote! {
+                        node.#root_model_field.id ==
+                            child.#field_root_model_field.#foreign_key_field
+                    }
+                }
+            }
+        } else {
+            quote! {
+                node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
+            }
+        };
+
+        quote! {
+            fn is_child_of(node: &Self, child: &#inner_type) -> bool {
+                #is_child_of_impl
+            }
+        }
+    }
+
+    fn child_id(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        if data.is_option_db_edge {
+            quote! { Option<Self::Id> }
+        } else if data.is_vec_db_edge {
+            quote! { Vec<Self::Id> }
+        } else {
+            quote! { Self::Id }
+        }
+    }
+
+    fn loaded_or_failed_child_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let field_name = &data.field_name;
+        let inner_type = &data.inner_type;
+
+        quote! {
+            fn loaded_or_failed_child(node: &mut Self, child: Option<&#inner_type>) {
+                node.#field_name.loaded_or_failed(child.cloned())
+            }
+        }
+    }
+
+    fn store_in_cache_impl(&self, _: &FieldDeriveData<'_>) -> TokenStream {
+        quote! {
+            fn store_in_cache(
+                child: &Self::ChildModel,
+                cache: &mut juniper_eager_loading::Cache<Self::Id>,
+            ) {
+                cache.insert::<Self::ChildModel, _>(child.id, child.clone());
+            }
+        }
     }
 
     fn gen_eager_load_all_children(&mut self) {
@@ -427,7 +575,7 @@ macro_rules! if_let_or_none {
 }
 
 fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
-    if !is_db_edge_field(ty)? {
+    if !is_db_edge_field(ty) {
         return None;
     }
 
@@ -443,21 +591,39 @@ fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
     Some(ty)
 }
 
-fn is_db_edge_field(ty: &syn::Type) -> Option<bool> {
-    let res = *last_ident_in_type_segment(ty)? == "DbEdge"
-        || *last_ident_in_type_segment(ty)? == "OptionDbEdge"
-        || *last_ident_in_type_segment(ty)? == "VecDbEdge";
-    Some(res)
+#[derive(Debug, Eq, PartialEq)]
+enum DbEdgeType {
+    Bare,
+    Option,
+    Vec,
+}
+
+fn db_edge_type(ty: &syn::Type) -> Option<DbEdgeType> {
+    if *last_ident_in_type_segment(ty)? == "OptionDbEdge" {
+        return Some(DbEdgeType::Option);
+    }
+
+    if *last_ident_in_type_segment(ty)? == "VecDbEdge" {
+        return Some(DbEdgeType::Vec);
+    }
+
+    if *last_ident_in_type_segment(ty)? == "DbEdge" {
+        return Some(DbEdgeType::Bare);
+    }
+
+    None
+}
+
+fn is_db_edge_field(ty: &syn::Type) -> bool {
+    db_edge_type(ty).is_some()
 }
 
 fn is_option_db_edge(ty: &syn::Type) -> Option<bool> {
-    let res = *last_ident_in_type_segment(ty)? == "OptionDbEdge";
-    Some(res)
+    Some(db_edge_type(ty)? == DbEdgeType::Option)
 }
 
 fn is_vec_db_edge(ty: &syn::Type) -> Option<bool> {
-    let res = *last_ident_in_type_segment(ty)? == "VecDbEdge";
-    Some(res)
+    Some(db_edge_type(ty)? == DbEdgeType::Vec)
 }
 
 fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
@@ -485,4 +651,29 @@ fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error
         .collect::<Vec<_>>();
     let outer: FieldOptionsOuter<T> = FromMeta::from_list(attrs.as_slice())?;
     Ok(outer.eager_loading)
+}
+
+fn type_to_string(ty: &syn::Type) -> String {
+    use quote::ToTokens;
+    let mut tokenized = quote! {};
+    ty.to_tokens(&mut tokenized);
+    tokenized.to_string()
+}
+
+struct FieldDeriveData<'a> {
+    association_type: Option<AssociationType>,
+    foreign_key_field: TokenStream,
+    is_option_db_edge: bool,
+    is_vec_db_edge: bool,
+    field_root_model_field: TokenStream,
+    root_model_field: TokenStream,
+    inner_type: &'a syn::Type,
+    field_name: &'a Ident,
+}
+
+impl<'a> FieldDeriveData<'a> {
+    fn association_type(&self) -> AssociationType {
+        self.association_type
+            .unwrap_or_else(|| panic!("Missing attribute `association_type` for VecDbEdge"))
+    }
 }

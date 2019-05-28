@@ -148,7 +148,7 @@ impl<T> VecDbEdge<T> {
 
 pub trait GraphqlNodeForModel: Sized {
     type Model;
-    type Id: Hash + Eq;
+    type Id: 'static + Hash + Eq;
     type Connection;
     type Error;
 
@@ -176,9 +176,12 @@ where
     Q: GenericQueryTrail<Child, Walked>,
 {
     type ChildModel;
-    type ChildId;
+    type ChildId: Hash + Eq;
 
-    fn child_id(child: &Self::Model) -> Self::ChildId;
+    fn child_ids(
+        models: &[Self::Model],
+        db: &Self::Connection,
+    ) -> Result<LoadResult<Self::ChildModel, Self::ChildId>, Self::Error>;
 
     fn load_children(
         ids: &[Self::ChildId],
@@ -192,7 +195,7 @@ where
     fn load_from_cache(
         ids: &[Self::ChildId],
         cache: &Cache<Self::Id>,
-    ) -> Vec<LoadResult<Self::ChildModel, Self::ChildId>>;
+    ) -> Vec<CacheLoadResult<Self::ChildModel, Self::ChildId>>;
 
     fn store_in_cache(child: &Self::ChildModel, cache: &mut Cache<Self::Id>);
 
@@ -203,28 +206,37 @@ where
         trail: &Q,
         cache: &mut Cache<Self::Id>,
     ) -> Result<(), Self::Error> {
-        let child_ids = models
-            .iter()
-            .map(|model| Self::child_id(model))
-            .collect::<Vec<_>>();
-
-        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
-        let mut child_models = vec![];
-        let mut ids_to_load = vec![];
-        for result in cached_child_models {
-            match result {
-                LoadResult::Loaded(model) => child_models.push(model),
-                LoadResult::Missing(id) => ids_to_load.push(id),
+        let child_models = match Self::child_ids(models, db)? {
+            LoadResult::Models(models) => {
+                for model in &models {
+                    Self::store_in_cache(model, cache);
+                }
+                models
             }
-        }
 
-        if !ids_to_load.is_empty() {
-            let loaded_models = Self::load_children(&ids_to_load, db)?;
-            for model in &loaded_models {
-                Self::store_in_cache(model, cache);
+            LoadResult::Ids(child_ids) => {
+                let cached_child_models = Self::load_from_cache(&child_ids, &cache);
+                let mut child_models = vec![];
+                let mut ids_not_in_cache = vec![];
+                for result in cached_child_models {
+                    match result {
+                        CacheLoadResult::Loaded(model) => child_models.push(model),
+                        CacheLoadResult::Missing(id) => ids_not_in_cache.push(id),
+                    }
+                }
+                ids_not_in_cache = unique(ids_not_in_cache);
+
+                if !ids_not_in_cache.is_empty() {
+                    let loaded_models = Self::load_children(&ids_not_in_cache, db)?;
+                    for model in &loaded_models {
+                        Self::store_in_cache(model, cache);
+                    }
+                    child_models.extend(loaded_models);
+                }
+
+                child_models
             }
-            child_models.extend(loaded_models);
-        }
+        };
 
         let mut children = child_models
             .iter()
@@ -244,8 +256,20 @@ where
     }
 }
 
+fn unique<T: Hash + Eq>(ts: Vec<T>) -> Vec<T> {
+    use std::collections::HashSet;
+    let set = ts.into_iter().collect::<HashSet<_>>();
+    set.into_iter().collect()
+}
+
 #[derive(Debug)]
 pub enum LoadResult<A, B> {
+    Models(Vec<A>),
+    Ids(Vec<B>),
+}
+
+#[derive(Debug)]
+pub enum CacheLoadResult<A, B> {
     Loaded(A),
     Missing(B),
 }
@@ -322,6 +346,13 @@ pub trait LoadFromIds: Sized {
     fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
+pub trait LoadFromModels<Model>: Sized {
+    type Error;
+    type Connection;
+
+    fn load(models: &[Model], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
+}
+
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
 pub enum Error {
@@ -341,15 +372,28 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[derive(Debug)]
-pub enum Cache<K: Hash + Eq> {
+pub enum Cache<K: 'static + Hash + Eq> {
     #[doc(hidden)]
     NoCaching,
     #[doc(hidden)]
     Cache(CacheInner<K>),
 }
 
-impl<K: Hash + Eq> Cache<K> {
-    pub fn new() -> Self {
+impl<K: 'static + Hash + Eq> Cache<K> {
+    pub fn new_from<T, F>(models: &[T], f: F) -> Self
+    where
+        T: 'static,
+        F: Fn(&T) -> (K, T),
+    {
+        let mut cache = Cache::new();
+        for model in models {
+            let (key, value) = f(model);
+            cache.insert::<T, _>(key, value);
+        }
+        cache
+    }
+
+    fn new() -> Self {
         Cache::Cache(CacheInner::default())
     }
 
@@ -396,7 +440,7 @@ impl<K: Hash + Eq> Cache<K> {
     pub fn hit_rate(&self) -> f32 {
         match self {
             Cache::NoCaching => 0.,
-            Cache::Cache(cache) => {
+            Cache::Cache(_) => {
                 let hits = self.hits() as f32;
                 let misses = self.misses() as f32;
                 if hits == 0. && misses == 0. {
@@ -406,13 +450,6 @@ impl<K: Hash + Eq> Cache<K> {
                 }
             }
         }
-    }
-}
-
-/// It defaults to not performing any caching
-impl<K: Hash + Eq> Default for Cache<K> {
-    fn default() -> Self {
-        Self::disabled()
     }
 }
 
