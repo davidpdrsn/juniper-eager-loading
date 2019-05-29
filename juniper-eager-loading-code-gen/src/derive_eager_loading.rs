@@ -1,9 +1,11 @@
+mod field_args;
+
 use darling::{FromDeriveInput, FromMeta};
-use heck::{CamelCase, SnakeCase};
+use field_args::{AssociationType, DbEdge, DeriveArgs, FieldArgs, VecDbEdge};
+use heck::CamelCase;
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{
     parse_macro_input, DeriveInput, GenericArgument, Ident, NestedMeta, PathArguments, Type,
@@ -11,12 +13,12 @@ use syn::{
 
 pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    let options = match Options::from_derive_input(&ast) {
-        Ok(options) => options,
+    let args = match DeriveArgs::from_derive_input(&ast) {
+        Ok(args) => args,
         Err(err) => panic!("{}", err),
     };
 
-    let out = DeriveData::new(ast, options);
+    let out = DeriveData::new(ast, args);
     let tokens = out.build_derive_output();
 
     derive_macro_called();
@@ -36,90 +38,17 @@ fn first_time_calling_derive_macro() -> bool {
     FIRST_DERIVE_CALL.load(Ordering::SeqCst)
 }
 
-#[derive(FromDeriveInput, Debug)]
-#[darling(attributes(eager_loading), forward_attrs(doc, cfg, allow))]
-struct Options {
-    model: syn::Path,
-    #[darling(default)]
-    id: Option<syn::Path>,
-    connection: syn::Path,
-    error: syn::Path,
-    #[darling(default)]
-    root_model_field: Option<syn::Ident>,
-}
-
 struct DeriveData {
     input: DeriveInput,
-    options: Options,
+    args: DeriveArgs,
     tokens: TokenStream,
 }
 
-#[derive(FromMeta, Debug)]
-struct DbEdgeFieldOptions {
-    #[darling(default)]
-    foreign_key_field: Option<syn::Ident>,
-    model: syn::Path,
-    #[darling(default)]
-    root_model_field: Option<syn::Ident>,
-    #[darling(default)]
-    association_type: Option<AssociationType>,
-}
-
-#[derive(FromMeta, Copy, Clone, Debug)]
-enum AssociationType {
-    OneToMany,
-    ManyToMany,
-}
-
-impl DbEdgeFieldOptions {
-    fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
-        self.foreign_key_field
-            .as_ref()
-            .map(|inner| quote! { #inner })
-            .unwrap_or_else(|| {
-                let field = field_name.to_string();
-                let field = format!("{}_id", field);
-                let field = Ident::new(&field, Span::call_site());
-                quote! { #field }
-            })
-    }
-
-    fn root_model_field(&self, field_name: &Ident) -> TokenStream {
-        self.root_model_field
-            .as_ref()
-            .map(|ident| {
-                quote! { #ident }
-            })
-            .unwrap_or_else(|| {
-                quote! { #field_name }
-            })
-    }
-
-    fn association_type(&self, field: &syn::Field) -> Option<AssociationType> {
-        match (is_vec_db_edge(&field.ty)?, self.association_type) {
-            (true, Some(ty)) => Some(ty),
-            (true, None) => Some(AssociationType::OneToMany),
-
-            (false, Some(_)) => {
-                let mut f = String::new();
-                writeln!(
-                    f,
-                    "Only `VecDbEdge` fields support `association_type` attributes"
-                )
-                .unwrap();
-                writeln!(f, "Type was `{}`", type_to_string(&field.ty)).unwrap();
-                panic!("{}", f);
-            }
-            (false, None) => None,
-        }
-    }
-}
-
 impl DeriveData {
-    fn new(input: DeriveInput, options: Options) -> Self {
+    fn new(input: DeriveInput, args: DeriveArgs) -> Self {
         Self {
             input,
-            options,
+            args,
             tokens: quote! {},
         }
     }
@@ -191,24 +120,42 @@ impl DeriveData {
 
         let struct_name = self.struct_name();
 
-        let args = parse_field_args::<DbEdgeFieldOptions>(&field).unwrap();
+        let is_vec_db_edge = is_vec_db_edge(&field.ty)?;
+
+        let args = if is_vec_db_edge {
+            let args = parse_field_args::<VecDbEdge>(&field)
+                .unwrap_or_else(|e| panic!("{}", e))
+                .vec_db_edge;
+            FieldArgs::from(args)
+        } else {
+            let args = parse_field_args::<DbEdge>(&field)
+                .unwrap_or_else(|e| panic!("{}", e))
+                .db_edge;
+            FieldArgs::from(args)
+        };
 
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
             panic!("Found `juniper_eager_loading::DbEdge` field without a name")
         });
 
+        let foreign_key_field_default = if is_vec_db_edge {
+            self.struct_name()
+        } else {
+            &field_name
+        };
+
         let data = FieldDeriveData {
             field_name,
             inner_type,
-            root_model_field: self.root_model_field(),
-            foreign_key_field: args.foreign_key_field(&field_name),
+            root_model_field: &self.root_model_field(),
+            foreign_key_field: args.foreign_key_field(foreign_key_field_default),
             field_root_model_field: args.root_model_field(&field_name),
-            association_type: args.association_type(field),
-            is_vec_db_edge: is_vec_db_edge(&field.ty)?,
+            association_type: args.association_type(),
+            is_vec_db_edge,
             is_option_db_edge: is_option_db_edge(&field.ty)?,
         };
 
-        let child_model = &args.model;
+        let child_model = args.model(&inner_type);
         let child_id = self.child_id(&data);
         let child_ids_impl = self.child_ids_impl(&data);
         let load_children_impl = self.load_children_impl(&data);
@@ -504,36 +451,24 @@ impl DeriveData {
         &self.input.ident
     }
 
-    fn model(&self) -> &syn::Path {
-        &self.options.model
+    fn model(&self) -> TokenStream {
+        self.args.model(&self.struct_name())
     }
 
     fn id(&self) -> TokenStream {
-        self.options
-            .id
-            .as_ref()
-            .map(|inner| quote! { #inner })
-            .unwrap_or_else(|| quote! { i32 })
+        self.args.id()
     }
 
-    fn connection(&self) -> &syn::Path {
-        &self.options.connection
+    fn connection(&self) -> TokenStream {
+        self.args.connection()
     }
 
-    fn error(&self) -> &syn::Path {
-        &self.options.error
+    fn error(&self) -> TokenStream {
+        self.args.error()
     }
 
     fn root_model_field(&self) -> TokenStream {
-        self.options
-            .root_model_field
-            .as_ref()
-            .map(|inner| quote! { #inner })
-            .unwrap_or_else(|| {
-                let struct_name = self.struct_name().to_string().to_snake_case();
-                let struct_name = Ident::new(&struct_name, Span::call_site());
-                quote! { #struct_name }
-            })
+        self.args.root_model_field(&self.struct_name())
     }
 
     fn struct_fields(&self) -> syn::punctuated::Iter<syn::Field> {
@@ -636,23 +571,18 @@ fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
 }
 
 fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error> {
-    #[derive(FromMeta)]
-    struct FieldOptionsOuter<K> {
-        eager_loading: K,
-    }
-
     let attrs = field
         .attrs
         .iter()
         .map(|attr| {
-            let meta = attr.parse_meta().unwrap();
+            let meta = attr.parse_meta().unwrap_or_else(|e| panic!("{}", e));
             NestedMeta::from(meta)
         })
         .collect::<Vec<_>>();
-    let outer: FieldOptionsOuter<T> = FromMeta::from_list(attrs.as_slice())?;
-    Ok(outer.eager_loading)
+    FromMeta::from_list(attrs.as_slice())
 }
 
+#[allow(dead_code)]
 fn type_to_string(ty: &syn::Type) -> String {
     use quote::ToTokens;
     let mut tokenized = quote! {};
@@ -661,19 +591,18 @@ fn type_to_string(ty: &syn::Type) -> String {
 }
 
 struct FieldDeriveData<'a> {
-    association_type: Option<AssociationType>,
+    association_type: AssociationType,
     foreign_key_field: TokenStream,
-    is_option_db_edge: bool,
-    is_vec_db_edge: bool,
     field_root_model_field: TokenStream,
-    root_model_field: TokenStream,
+    root_model_field: &'a TokenStream,
     inner_type: &'a syn::Type,
     field_name: &'a Ident,
+    is_option_db_edge: bool,
+    is_vec_db_edge: bool,
 }
 
 impl<'a> FieldDeriveData<'a> {
     fn association_type(&self) -> AssociationType {
         self.association_type
-            .unwrap_or_else(|| panic!("Missing attribute `association_type` for VecDbEdge"))
     }
 }

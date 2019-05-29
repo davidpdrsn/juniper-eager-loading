@@ -17,13 +17,13 @@ pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(attributes(load_from_ids), forward_attrs(doc, cfg, allow))]
+#[darling(attributes(load_from_models), forward_attrs(doc, cfg, allow))]
 struct Options {
-    #[darling(default)]
-    id: Option<syn::Path>,
     #[darling(default)]
     connection: Option<syn::Path>,
     table: syn::Path,
+    from_model: syn::Path,
+    foreign_key: syn::Ident,
     #[darling(default)]
     error: Option<syn::Path>,
 }
@@ -45,24 +45,34 @@ impl DeriveData {
 
     fn build_derive_output(mut self) -> TokenStream {
         let struct_name = self.struct_name();
-        let id = self.id();
         let connection = self.connection();
         let table = self.table();
         let error = self.error();
+        let from_model = self.from_model();
+        let foreign_key = self.foreign_key();
 
         self.tokens.extend(quote! {
-            impl juniper_eager_loading::LoadFromIds for #struct_name {
-                type Id = #id;
+            impl juniper_eager_loading::LoadFromModels<#from_model> for #struct_name {
                 type Error = #error;
                 type Connection = #connection;
 
-                fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+                fn load(
+                    models: &[#from_model],
+                    db: &Self::Connection,
+                ) -> Result<Vec<TeamMembership>, Self::Error> {
                     use diesel::pg::expression::dsl::any;
+                    use schema::#table;
 
-                    #table::table
-                        .filter(#table::id.eq(any(ids)))
-                        .load::<#struct_name>(db)
-                        .map_err(std::convert::From::from)
+                    let model_ids = models
+                        .iter()
+                        .map(|model| model.id)
+                        .collect::<Vec<_>>();
+
+                    let res = #table::table
+                        .filter(#table::#foreign_key.eq(any(model_ids)))
+                        .load::<#struct_name>(db)?;
+
+                    Ok(res)
                 }
             }
         });
@@ -74,12 +84,12 @@ impl DeriveData {
         &self.input.ident
     }
 
-    fn id(&self) -> TokenStream {
-        self.options
-            .id
-            .as_ref()
-            .map(|inner| quote! { #inner })
-            .unwrap_or_else(|| quote! { i32 })
+    fn from_model(&self) -> &syn::Path {
+        &self.options.from_model
+    }
+
+    fn foreign_key(&self) -> &syn::Ident {
+        &self.options.foreign_key
     }
 
     fn connection(&self) -> TokenStream {

@@ -19,7 +19,46 @@ pub use juniper_eager_loading_code_gen::EagerLoading;
 
 /// Helpers related to Diesel. If you don't use Diesel you can ignore this.
 pub mod diesel {
-    pub use juniper_eager_loading_code_gen::LoadFromIds;
+    pub use crate::impl_LoadFromModels;
+    pub use juniper_eager_loading_code_gen::{LoadFromIds, LoadFromModels};
+}
+
+#[macro_export]
+macro_rules! impl_LoadFromModels {
+    (
+        error = $error:path,
+        connection = $connection:path,
+
+        $(
+            $from:ident -> $to:ident
+            ( $model_key:ident -> $table:ident . $foreign_key:ident ),
+        )*
+    ) => {
+        $(
+            impl juniper_eager_loading::LoadFromModels<$from> for $to {
+                type Error = $error;
+                type Connection = $connection;
+
+                fn load(
+                    models: &[$from],
+                    db: &Self::Connection,
+                ) -> Result<Vec<$to>, Self::Error> {
+                    use diesel::pg::expression::dsl::any;
+
+                    let model_ids = models
+                        .iter()
+                        .map(|model| model.$model_key)
+                        .collect::<Vec<_>>();
+
+                    let res = $table::table
+                        .filter($table::$foreign_key.eq(any(model_ids)))
+                        .load::<$to>(db)?;
+
+                    Ok(res)
+                }
+            }
+        )*
+    }
 }
 
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
@@ -346,11 +385,11 @@ pub trait LoadFromIds: Sized {
     fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
-pub trait LoadFromModels<Model>: Sized {
+pub trait LoadFromModels<From>: Sized {
     type Error;
     type Connection;
 
-    fn load(models: &[Model], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
+    fn load(models: &[From], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
 #[derive(Debug)]

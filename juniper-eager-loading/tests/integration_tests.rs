@@ -181,6 +181,26 @@ mod models {
             Ok(employments)
         }
     }
+
+    impl juniper_eager_loading::LoadFromModels<Employment> for Company {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(models: &[Employment], db: &Self::Connection) -> Result<Vec<Company>, Self::Error> {
+            let company_ids = models
+                .iter()
+                .map(|employment| employment.company_id)
+                .collect::<Vec<_>>();
+            let companies = db
+                .companies
+                .all_values()
+                .into_iter()
+                .filter(|company| company_ids.contains(&company.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(companies)
+        }
+    }
 }
 
 pub struct Db {
@@ -236,26 +256,37 @@ impl MutationFields for Mutation {
     }
 }
 
+// The default values are commented out
 #[derive(Clone, Debug, EagerLoading)]
 #[eager_loading(
-    model = "models::User",
-    id = "i32",
     connection = "Db",
     error = "Box<dyn std::error::Error>",
-    root_model_field = "user"
+    // model = "models::User",
+    // id = "i32",
+    // root_model_field = "user"
 )]
 pub struct User {
     user: models::User,
-    #[eager_loading(foreign_key_field = "country_id", model = "models::Country")]
+    // #[db_edge(
+    //     model = "models::Country",
+    //     foreign_key_field = "country_id",
+    //     root_model_field = "country"
+    // )]
+    #[db_edge(default)]
     country: DbEdge<Country>,
-    #[eager_loading(foreign_key_field = "city_id", model = "models::City")]
+    // #[db_edge(
+    //     model = "models::City",
+    //     foreign_key_field = "city_id",
+    //     root_model_field = "city"
+    // )]
+    #[db_edge(default)]
     city: OptionDbEdge<City>,
 
-    #[eager_loading(
-        foreign_key_field = "user_id",
-        model = "models::Employment",
+    #[vec_db_edge(
         root_model_field = "employment",
-        association_type = "many_to_many"
+        association_type = "many_to_many",
+        // model = "models::Employment",
+        // foreign_key_field = "user_id",
     )]
     employments: VecDbEdge<Employment>,
 }
@@ -294,17 +325,18 @@ impl UserFields for User {
 #[eager_loading(
     model = "models::Country",
     connection = "Db",
+    id = "i32",
     error = "Box<dyn std::error::Error>",
     root_model_field = "country"
 )]
 pub struct Country {
     country: models::Country,
 
-    #[eager_loading(
+    #[vec_db_edge(
         foreign_key_field = "city_ids",
         root_model_field = "city",
         model = "models::City",
-        association_type = "one_to_many"
+        // association_type = "one_to_many"
     )]
     cities: VecDbEdge<City>,
 }
@@ -333,7 +365,11 @@ impl CountryFields for Country {
 )]
 pub struct City {
     city: models::City,
-    #[eager_loading(foreign_key_field = "country_id", model = "models::Country")]
+    #[db_edge(
+        foreign_key_field = "country_id",
+        model = "models::Country",
+        root_model_field = "country"
+    )]
     country: DbEdge<Country>,
 }
 
@@ -379,9 +415,17 @@ impl CompanyFields for Company {
 )]
 pub struct Employment {
     employment: models::Employment,
-    #[eager_loading(foreign_key_field = "user_id", model = "models::User")]
+    #[db_edge(
+        foreign_key_field = "user_id",
+        model = "models::User",
+        root_model_field = "user"
+    )]
     user: DbEdge<User>,
-    #[eager_loading(foreign_key_field = "company_id", model = "models::Company")]
+    #[db_edge(
+        foreign_key_field = "company_id",
+        model = "models::Company",
+        root_model_field = "company"
+    )]
     company: DbEdge<Company>,
 }
 
@@ -730,7 +774,7 @@ fn loading_companies_for_users() {
                             "company": { "id": company.id },
                             "user": { "id": user.id },
                         }
-                    ]
+                    ],
                 },
             ]
         }),
