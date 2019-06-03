@@ -92,15 +92,12 @@ pub struct HasManyInner {
     #[darling(default)]
     model: Option<syn::Path>,
     root_model_field: syn::Ident,
-    #[darling(default)]
-    association_type: Option<HasManyType>,
 }
 
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
     model: Option<syn::Path>,
     root_model_field: Option<syn::Ident>,
-    association_type: Option<HasManyType>,
 }
 
 impl FieldArgs {
@@ -132,14 +129,6 @@ impl FieldArgs {
             quote! { #field_name }
         }
     }
-
-    pub fn association_type(&self) -> HasManyType {
-        if let Some(ty) = self.association_type {
-            ty
-        } else {
-            HasManyType::OneToMany
-        }
-    }
 }
 
 impl From<HasOneInner> for FieldArgs {
@@ -148,7 +137,6 @@ impl From<HasOneInner> for FieldArgs {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
             root_model_field: inner.root_model_field,
-            association_type: None,
         }
     }
 }
@@ -159,13 +147,6 @@ impl From<HasManyInner> for FieldArgs {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
             root_model_field: Some(inner.root_model_field),
-            association_type: inner.association_type,
         }
     }
-}
-
-#[derive(FromMeta, Copy, Clone, Debug)]
-pub enum HasManyType {
-    OneToMany,
-    ManyToMany,
 }

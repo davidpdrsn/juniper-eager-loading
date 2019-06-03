@@ -220,7 +220,7 @@ where
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
-    ) -> Result<LoadResult<Self::ChildModel, Self::ChildId>, Self::Error>;
+    ) -> Result<Vec<Self::ChildId>, Self::Error>;
 
     fn load_children(
         ids: &[Self::ChildId],
@@ -245,37 +245,25 @@ where
         trail: &Q,
         cache: &mut Cache<Self::Id>,
     ) -> Result<(), Self::Error> {
-        let child_models = match Self::child_ids(models, db)? {
-            LoadResult::Models(models) => {
-                for model in &models {
-                    Self::store_in_cache(model, cache);
-                }
-                models
+        let child_ids = Self::child_ids(models, db)?;
+        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
+        let mut child_models = vec![];
+        let mut ids_not_in_cache = vec![];
+        for result in cached_child_models {
+            match result {
+                CacheLoadResult::Loaded(model) => child_models.push(model),
+                CacheLoadResult::Missing(id) => ids_not_in_cache.push(id),
             }
+        }
+        ids_not_in_cache = unique(ids_not_in_cache);
 
-            LoadResult::Ids(child_ids) => {
-                let cached_child_models = Self::load_from_cache(&child_ids, &cache);
-                let mut child_models = vec![];
-                let mut ids_not_in_cache = vec![];
-                for result in cached_child_models {
-                    match result {
-                        CacheLoadResult::Loaded(model) => child_models.push(model),
-                        CacheLoadResult::Missing(id) => ids_not_in_cache.push(id),
-                    }
-                }
-                ids_not_in_cache = unique(ids_not_in_cache);
-
-                if !ids_not_in_cache.is_empty() {
-                    let loaded_models = Self::load_children(&ids_not_in_cache, db)?;
-                    for model in &loaded_models {
-                        Self::store_in_cache(model, cache);
-                    }
-                    child_models.extend(loaded_models);
-                }
-
-                child_models
+        if !ids_not_in_cache.is_empty() {
+            let loaded_models = Self::load_children(&ids_not_in_cache, db)?;
+            for model in &loaded_models {
+                Self::store_in_cache(model, cache);
             }
-        };
+            child_models.extend(loaded_models);
+        }
 
         let mut children = child_models
             .iter()
@@ -299,12 +287,6 @@ fn unique<T: Hash + Eq>(ts: Vec<T>) -> Vec<T> {
     use std::collections::HashSet;
     let set = ts.into_iter().collect::<HashSet<_>>();
     set.into_iter().collect()
-}
-
-#[derive(Debug)]
-pub enum LoadResult<A, B> {
-    Models(Vec<A>),
-    Ids(Vec<B>),
 }
 
 #[derive(Debug)]

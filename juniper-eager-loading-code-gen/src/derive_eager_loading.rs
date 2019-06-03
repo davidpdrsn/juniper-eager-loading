@@ -1,7 +1,7 @@
 mod field_args;
 
 use darling::{FromDeriveInput, FromMeta};
-use field_args::{HasManyType, DeriveArgs, FieldArgs, HasOne, OptionHasOne, HasMany};
+use field_args::{DeriveArgs, FieldArgs, HasMany, HasOne, OptionHasOne};
 use heck::CamelCase;
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
@@ -61,6 +61,10 @@ impl DeriveData {
         self.gen_graphql_node_for_model();
         self.gen_eager_load_children_of_type();
         self.gen_eager_load_all_children();
+
+        if *self.struct_name() == "Country" {
+            println!("{}", self.tokens);
+        }
 
         self.tokens
     }
@@ -156,7 +160,6 @@ impl DeriveData {
             root_model_field: &self.root_model_field(),
             foreign_key_field: args.foreign_key_field(foreign_key_field_default),
             field_root_model_field: args.root_model_field(&field_name),
-            association_type: args.association_type(),
             is_has_many,
             is_option_has_one,
         };
@@ -197,35 +200,24 @@ impl DeriveData {
     fn child_ids_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
         let foreign_key_field = &data.foreign_key_field;
 
-        let child_ids_from_field = quote! {
-            let ids = models
-                .iter()
-                .map(|model| model.#foreign_key_field.clone())
-                .collect::<Vec<_>>();
-            Ok(juniper_eager_loading::LoadResult::Ids(ids))
-        };
-
         let child_ids_impl = if data.is_has_many {
-            let association_type = data.association_type();
-
-            match association_type {
-                HasManyType::OneToMany => child_ids_from_field,
-                HasManyType::ManyToMany => {
-                    quote! {
-                        let models = <
-                            Self::ChildModel
-                            as
-                            juniper_eager_loading::LoadFromModels<Self::Model>
-                        >::load(
-                            models,
-                            db,
-                        )?;
-                        Ok(juniper_eager_loading::LoadResult::Models(models))
-                    }
-                }
+            quote! {
+                let _: () = models;
+                unimplemented!()
+                // let ids = models
+                //     .iter()
+                //     .map(|model| model.#foreign_key_field.clone())
+                //     .collect::<Vec<_>>();
+                // Ok(vec![ids])
             }
         } else {
-            child_ids_from_field
+            quote! {
+                let ids = models
+                    .iter()
+                    .map(|model| model.#foreign_key_field.clone())
+                    .collect::<Vec<_>>();
+                Ok(ids)
+            }
         };
 
         quote! {
@@ -234,7 +226,7 @@ impl DeriveData {
                 models: &[Self::Model],
                 db: &Self::Connection,
             ) -> Result<
-                juniper_eager_loading::LoadResult<Self::ChildModel, Self::ChildId>,
+                Vec<Self::ChildId>,
                 Self::Error,
             > {
                 #child_ids_impl
@@ -342,23 +334,9 @@ impl DeriveData {
                 node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
             }
         } else if data.is_has_many {
-            let association_type = data.association_type();
-
-            match association_type {
-                HasManyType::OneToMany => {
-                    quote! {
-                        node
-                            .#root_model_field
-                            .#foreign_key_field
-                            .contains(&child.#field_root_model_field.id)
-                    }
-                }
-                HasManyType::ManyToMany => {
-                    quote! {
-                        node.#root_model_field.id ==
-                            child.#field_root_model_field.#foreign_key_field
-                    }
-                }
+            quote! {
+                node.#root_model_field.id ==
+                    child.#field_root_model_field.#foreign_key_field
             }
         } else {
             quote! {
@@ -597,7 +575,6 @@ fn type_to_string(ty: &syn::Type) -> String {
 }
 
 struct FieldDeriveData<'a> {
-    association_type: HasManyType,
     foreign_key_field: TokenStream,
     field_root_model_field: TokenStream,
     root_model_field: &'a TokenStream,
@@ -605,10 +582,4 @@ struct FieldDeriveData<'a> {
     field_name: &'a Ident,
     is_option_has_one: bool,
     is_has_many: bool,
-}
-
-impl<'a> FieldDeriveData<'a> {
-    fn association_type(&self) -> HasManyType {
-        self.association_type
-    }
 }
