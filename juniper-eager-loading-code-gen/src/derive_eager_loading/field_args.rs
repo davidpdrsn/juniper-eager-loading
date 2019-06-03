@@ -58,12 +58,17 @@ impl DeriveArgs {
 }
 
 #[derive(FromMeta)]
-pub struct DbEdge {
-    pub db_edge: DbEdgeInner,
+pub struct HasOne {
+    pub has_one: HasOneInner,
 }
 
 #[derive(FromMeta)]
-pub struct DbEdgeInner {
+pub struct OptionHasOne {
+    pub option_has_one: HasOneInner,
+}
+
+#[derive(FromMeta)]
+pub struct HasOneInner {
     #[allow(dead_code)]
     #[darling(default)]
     default: (),
@@ -76,26 +81,26 @@ pub struct DbEdgeInner {
 }
 
 #[derive(FromMeta)]
-pub struct VecDbEdge {
-    pub vec_db_edge: VecDbEdgeInner,
+pub struct HasMany {
+    pub has_many: HasManyInner,
 }
 
 #[derive(FromMeta)]
-pub struct VecDbEdgeInner {
+pub struct HasManyInner {
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     #[darling(default)]
     model: Option<syn::Path>,
     root_model_field: syn::Ident,
     #[darling(default)]
-    association_type: Option<AssociationType>,
+    association_type: Option<HasManyType>,
 }
 
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
     model: Option<syn::Path>,
     root_model_field: Option<syn::Ident>,
-    association_type: Option<AssociationType>,
+    association_type: Option<HasManyType>,
 }
 
 impl FieldArgs {
@@ -128,17 +133,17 @@ impl FieldArgs {
         }
     }
 
-    pub fn association_type(&self) -> AssociationType {
+    pub fn association_type(&self) -> HasManyType {
         if let Some(ty) = self.association_type {
             ty
         } else {
-            AssociationType::OneToMany
+            HasManyType::OneToMany
         }
     }
 }
 
-impl From<DbEdgeInner> for FieldArgs {
-    fn from(inner: DbEdgeInner) -> Self {
+impl From<HasOneInner> for FieldArgs {
+    fn from(inner: HasOneInner) -> Self {
         Self {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
@@ -148,8 +153,8 @@ impl From<DbEdgeInner> for FieldArgs {
     }
 }
 
-impl From<VecDbEdgeInner> for FieldArgs {
-    fn from(inner: VecDbEdgeInner) -> Self {
+impl From<HasManyInner> for FieldArgs {
+    fn from(inner: HasManyInner) -> Self {
         Self {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
@@ -160,7 +165,7 @@ impl From<VecDbEdgeInner> for FieldArgs {
 }
 
 #[derive(FromMeta, Copy, Clone, Debug)]
-pub enum AssociationType {
+pub enum HasManyType {
     OneToMany,
     ManyToMany,
 }

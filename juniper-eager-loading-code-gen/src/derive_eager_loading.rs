@@ -1,7 +1,7 @@
 mod field_args;
 
 use darling::{FromDeriveInput, FromMeta};
-use field_args::{AssociationType, DbEdge, DeriveArgs, FieldArgs, VecDbEdge};
+use field_args::{HasManyType, DeriveArgs, FieldArgs, HasOne, OptionHasOne, HasMany};
 use heck::CamelCase;
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
@@ -84,7 +84,7 @@ impl DeriveData {
         let field_setters = self.struct_fields().map(|field| {
             let ident = &field.ident;
 
-            if is_db_edge_field(&field.ty) {
+            if is_association_field(&field.ty) {
                 quote! { #ident: Default::default() }
             } else {
                 quote! { #ident: std::clone::Clone::clone(model) }
@@ -116,29 +116,35 @@ impl DeriveData {
     }
 
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
-        let inner_type = get_type_from_db_edge(&field.ty)?;
+        let inner_type = get_type_from_association(&field.ty)?;
 
         let struct_name = self.struct_name();
 
-        let is_vec_db_edge = is_vec_db_edge(&field.ty)?;
+        let is_has_many = is_has_many(&field.ty)?;
+        let is_option_has_one = is_option_has_one(&field.ty)?;
 
-        let args = if is_vec_db_edge {
-            let args = parse_field_args::<VecDbEdge>(&field)
+        let args = if is_has_many {
+            let args = parse_field_args::<HasMany>(&field)
                 .unwrap_or_else(|e| panic!("{}", e))
-                .vec_db_edge;
+                .has_many;
+            FieldArgs::from(args)
+        } else if is_option_has_one {
+            let args = parse_field_args::<OptionHasOne>(&field)
+                .unwrap_or_else(|e| panic!("{}", e))
+                .option_has_one;
             FieldArgs::from(args)
         } else {
-            let args = parse_field_args::<DbEdge>(&field)
+            let args = parse_field_args::<HasOne>(&field)
                 .unwrap_or_else(|e| panic!("{}", e))
-                .db_edge;
+                .has_one;
             FieldArgs::from(args)
         };
 
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
-            panic!("Found `juniper_eager_loading::DbEdge` field without a name")
+            panic!("Found `juniper_eager_loading::HasOne` field without a name")
         });
 
-        let foreign_key_field_default = if is_vec_db_edge {
+        let foreign_key_field_default = if is_has_many {
             self.struct_name()
         } else {
             &field_name
@@ -151,8 +157,8 @@ impl DeriveData {
             foreign_key_field: args.foreign_key_field(foreign_key_field_default),
             field_root_model_field: args.root_model_field(&field_name),
             association_type: args.association_type(),
-            is_vec_db_edge,
-            is_option_db_edge: is_option_db_edge(&field.ty)?,
+            is_has_many,
+            is_option_has_one,
         };
 
         let child_model = args.model(&inner_type);
@@ -199,12 +205,12 @@ impl DeriveData {
             Ok(juniper_eager_loading::LoadResult::Ids(ids))
         };
 
-        let child_ids_impl = if data.is_vec_db_edge {
+        let child_ids_impl = if data.is_has_many {
             let association_type = data.association_type();
 
             match association_type {
-                AssociationType::OneToMany => child_ids_from_field,
-                AssociationType::ManyToMany => {
+                HasManyType::OneToMany => child_ids_from_field,
+                HasManyType::ManyToMany => {
                     quote! {
                         let models = <
                             Self::ChildModel
@@ -251,7 +257,7 @@ impl DeriveData {
     }
 
     fn normalize_ids(&self, data: &FieldDeriveData<'_>) -> TokenStream {
-        if data.is_option_db_edge {
+        if data.is_option_has_one {
             quote! {
                 let ids = ids
                     .into_iter()
@@ -259,7 +265,7 @@ impl DeriveData {
                     .cloned()
                     .collect::<Vec<_>>();
             }
-        } else if data.is_vec_db_edge {
+        } else if data.is_has_many {
             quote! {
                 let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
             }
@@ -271,7 +277,7 @@ impl DeriveData {
     fn load_from_cache_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
         let normalize_ids = self.normalize_ids(data);
 
-        let load_from_cache_impl = if data.is_option_db_edge {
+        let load_from_cache_impl = if data.is_option_has_one {
             quote! {
                 #normalize_ids
                 ids.into_iter().map(|id| {
@@ -284,7 +290,7 @@ impl DeriveData {
                     }
                 }).collect::<Vec<_>>()
             }
-        } else if data.is_vec_db_edge {
+        } else if data.is_has_many {
             quote! {
                 #normalize_ids
                 ids.into_iter().map(|id| {
@@ -331,15 +337,15 @@ impl DeriveData {
         let field_root_model_field = &data.field_root_model_field;
         let inner_type = &data.inner_type;
 
-        let is_child_of_impl = if data.is_option_db_edge {
+        let is_child_of_impl = if data.is_option_has_one {
             quote! {
                 node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
             }
-        } else if data.is_vec_db_edge {
+        } else if data.is_has_many {
             let association_type = data.association_type();
 
             match association_type {
-                AssociationType::OneToMany => {
+                HasManyType::OneToMany => {
                     quote! {
                         node
                             .#root_model_field
@@ -347,7 +353,7 @@ impl DeriveData {
                             .contains(&child.#field_root_model_field.id)
                     }
                 }
-                AssociationType::ManyToMany => {
+                HasManyType::ManyToMany => {
                     quote! {
                         node.#root_model_field.id ==
                             child.#field_root_model_field.#foreign_key_field
@@ -368,9 +374,9 @@ impl DeriveData {
     }
 
     fn child_id(&self, data: &FieldDeriveData<'_>) -> TokenStream {
-        if data.is_option_db_edge {
+        if data.is_option_has_one {
             quote! { Option<Self::Id> }
-        } else if data.is_vec_db_edge {
+        } else if data.is_has_many {
             quote! { Vec<Self::Id> }
         } else {
             quote! { Self::Id }
@@ -426,10 +432,10 @@ impl DeriveData {
     }
 
     fn gen_eager_load_all_children_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
-        let inner_type = get_type_from_db_edge(&field.ty)?;
+        let inner_type = get_type_from_association(&field.ty)?;
 
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
-            panic!("Found `juniper_eager_loading::DbEdge` field without a name")
+            panic!("Found `juniper_eager_loading::HasOne` field without a name")
         });
 
         let context = self.field_context_name(&field);
@@ -509,8 +515,8 @@ macro_rules! if_let_or_none {
     };
 }
 
-fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
-    if !is_db_edge_field(ty) {
+fn get_type_from_association(ty: &syn::Type) -> Option<&syn::Type> {
+    if !is_association_field(ty) {
         return None;
     }
 
@@ -527,38 +533,38 @@ fn get_type_from_db_edge(ty: &syn::Type) -> Option<&syn::Type> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum DbEdgeType {
-    Bare,
-    Option,
-    Vec,
+enum AssociationType {
+    HasOne,
+    OptionHasOne,
+    HasMany,
 }
 
-fn db_edge_type(ty: &syn::Type) -> Option<DbEdgeType> {
-    if *last_ident_in_type_segment(ty)? == "OptionDbEdge" {
-        return Some(DbEdgeType::Option);
+fn association_type(ty: &syn::Type) -> Option<AssociationType> {
+    if *last_ident_in_type_segment(ty)? == "OptionHasOne" {
+        return Some(AssociationType::OptionHasOne);
     }
 
-    if *last_ident_in_type_segment(ty)? == "VecDbEdge" {
-        return Some(DbEdgeType::Vec);
+    if *last_ident_in_type_segment(ty)? == "HasMany" {
+        return Some(AssociationType::HasMany);
     }
 
-    if *last_ident_in_type_segment(ty)? == "DbEdge" {
-        return Some(DbEdgeType::Bare);
+    if *last_ident_in_type_segment(ty)? == "HasOne" {
+        return Some(AssociationType::HasOne);
     }
 
     None
 }
 
-fn is_db_edge_field(ty: &syn::Type) -> bool {
-    db_edge_type(ty).is_some()
+fn is_association_field(ty: &syn::Type) -> bool {
+    association_type(ty).is_some()
 }
 
-fn is_option_db_edge(ty: &syn::Type) -> Option<bool> {
-    Some(db_edge_type(ty)? == DbEdgeType::Option)
+fn is_option_has_one(ty: &syn::Type) -> Option<bool> {
+    Some(association_type(ty)? == AssociationType::OptionHasOne)
 }
 
-fn is_vec_db_edge(ty: &syn::Type) -> Option<bool> {
-    Some(db_edge_type(ty)? == DbEdgeType::Vec)
+fn is_has_many(ty: &syn::Type) -> Option<bool> {
+    Some(association_type(ty)? == AssociationType::HasMany)
 }
 
 fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
@@ -591,18 +597,18 @@ fn type_to_string(ty: &syn::Type) -> String {
 }
 
 struct FieldDeriveData<'a> {
-    association_type: AssociationType,
+    association_type: HasManyType,
     foreign_key_field: TokenStream,
     field_root_model_field: TokenStream,
     root_model_field: &'a TokenStream,
     inner_type: &'a syn::Type,
     field_name: &'a Ident,
-    is_option_db_edge: bool,
-    is_vec_db_edge: bool,
+    is_option_has_one: bool,
+    is_has_many: bool,
 }
 
 impl<'a> FieldDeriveData<'a> {
-    fn association_type(&self) -> AssociationType {
+    fn association_type(&self) -> HasManyType {
         self.association_type
     }
 }

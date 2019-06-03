@@ -69,7 +69,7 @@ pub mod prelude {
 }
 
 #[derive(Debug, Clone)]
-pub enum DbEdge<T> {
+pub enum HasOne<T> {
     /// The associated value was loaded.
     Loaded(T),
 
@@ -80,38 +80,38 @@ pub enum DbEdge<T> {
     LoadFailed,
 }
 
-/// Defaults to `DbEdge::NotLoaded`
-impl<T> Default for DbEdge<T> {
+/// Defaults to `HasOne::NotLoaded`
+impl<T> Default for HasOne<T> {
     fn default() -> Self {
-        DbEdge::NotLoaded
+        HasOne::NotLoaded
     }
 }
 
-impl<T> DbEdge<T> {
+impl<T> HasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         match self {
-            DbEdge::Loaded(inner) => Ok(inner),
-            DbEdge::NotLoaded => Err(Error::NotLoaded),
-            DbEdge::LoadFailed => Err(Error::LoadFailed),
+            HasOne::Loaded(inner) => Ok(inner),
+            HasOne::NotLoaded => Err(Error::NotLoaded),
+            HasOne::LoadFailed => Err(Error::LoadFailed),
         }
     }
 
     /// Assign some potentially loaded value.
     ///
-    /// If `inner` is a `Some` it will change `self` to `DbEdge::Loaded`, otherwise
-    /// `DbEdge::LoadFailed`.
+    /// If `inner` is a `Some` it will change `self` to `HasOne::Loaded`, otherwise
+    /// `HasOne::LoadFailed`.
     pub fn loaded_or_failed(&mut self, inner: Option<T>) {
         if let Some(inner) = inner {
-            std::mem::replace(self, DbEdge::Loaded(inner));
+            std::mem::replace(self, HasOne::Loaded(inner));
         } else {
-            std::mem::replace(self, DbEdge::LoadFailed);
+            std::mem::replace(self, HasOne::LoadFailed);
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum OptionDbEdge<T> {
+pub enum OptionHasOne<T> {
     /// The associated value was loaded.
     Loaded(Option<T>),
 
@@ -119,38 +119,38 @@ pub enum OptionDbEdge<T> {
     NotLoaded,
 }
 
-impl<T> Default for OptionDbEdge<T> {
+impl<T> Default for OptionHasOne<T> {
     fn default() -> Self {
-        OptionDbEdge::NotLoaded
+        OptionHasOne::NotLoaded
     }
 }
 
-impl<T> OptionDbEdge<T> {
+impl<T> OptionHasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         match self {
-            OptionDbEdge::Loaded(inner) => Ok(inner),
-            OptionDbEdge::NotLoaded => Err(Error::NotLoaded),
+            OptionHasOne::Loaded(inner) => Ok(inner),
+            OptionHasOne::NotLoaded => Err(Error::NotLoaded),
         }
     }
 
     /// Assign some potentially loaded value.
     ///
-    /// If `inner` is a `Some` it will change `self` to `OptionDbEdge::Loaded(Some(_))`, otherwise
-    /// `OptionDbEdge::Loaded(None)`. This means it ignores loads that failed.
+    /// If `inner` is a `Some` it will change `self` to `OptionHasOne::Loaded(Some(_))`, otherwise
+    /// `OptionHasOne::Loaded(None)`. This means it ignores loads that failed.
     pub fn loaded_or_failed(&mut self, inner: Option<T>) {
-        std::mem::replace(self, OptionDbEdge::Loaded(inner));
+        std::mem::replace(self, OptionHasOne::Loaded(inner));
     }
 }
 
-impl<T> Default for VecDbEdge<T> {
+impl<T> Default for HasMany<T> {
     fn default() -> Self {
-        VecDbEdge::NotLoaded
+        HasMany::NotLoaded
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum VecDbEdge<T> {
+pub enum HasMany<T> {
     /// The associated values were loaded.
     Loaded(Vec<T>),
 
@@ -158,26 +158,26 @@ pub enum VecDbEdge<T> {
     NotLoaded,
 }
 
-impl<T> VecDbEdge<T> {
+impl<T> HasMany<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         match self {
-            VecDbEdge::Loaded(inner) => Ok(inner),
-            VecDbEdge::NotLoaded => Err(Error::NotLoaded),
+            HasMany::Loaded(inner) => Ok(inner),
+            HasMany::NotLoaded => Err(Error::NotLoaded),
         }
     }
 
     pub fn loaded_or_failed(&mut self, inner: Option<T>) {
         match self {
-            VecDbEdge::Loaded(models) => {
+            HasMany::Loaded(models) => {
                 if let Some(inner) = inner {
                     models.push(inner)
                 }
             }
-            VecDbEdge::NotLoaded => {
+            HasMany::NotLoaded => {
                 let loaded = if let Some(inner) = inner {
-                    VecDbEdge::Loaded(vec![inner])
+                    HasMany::Loaded(vec![inner])
                 } else {
-                    VecDbEdge::Loaded(vec![])
+                    HasMany::Loaded(vec![])
                 };
                 std::mem::replace(self, loaded);
             }
@@ -402,8 +402,8 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::NotLoaded => write!(f, "`DbEdge` should have been eager loaded, but wasn't"),
-            Error::LoadFailed => write!(f, "Failed to load `DbEdge`"),
+            Error::NotLoaded => write!(f, "`HasOne` should have been eager loaded, but wasn't"),
+            Error::LoadFailed => write!(f, "Failed to load `HasOne`"),
         }
     }
 }

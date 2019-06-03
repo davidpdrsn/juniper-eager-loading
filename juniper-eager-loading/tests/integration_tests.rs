@@ -1,6 +1,6 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use juniper::{Executor, FieldResult};
-use juniper_eager_loading::{prelude::*, Cache, DbEdge, EagerLoading, OptionDbEdge, VecDbEdge};
+use juniper_eager_loading::{prelude::*, Cache, HasOne, EagerLoading, OptionHasOne, HasMany};
 use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -267,28 +267,28 @@ impl MutationFields for Mutation {
 )]
 pub struct User {
     user: models::User,
-    // #[db_edge(
+    // #[has_one(
     //     model = "models::Country",
     //     foreign_key_field = "country_id",
     //     root_model_field = "country"
     // )]
-    #[db_edge(default)]
-    country: DbEdge<Country>,
-    // #[db_edge(
+    #[has_one(default)]
+    country: HasOne<Country>,
+    // #[has_one(
     //     model = "models::City",
     //     foreign_key_field = "city_id",
     //     root_model_field = "city"
     // )]
-    #[db_edge(default)]
-    city: OptionDbEdge<City>,
+    #[option_has_one(default)]
+    city: OptionHasOne<City>,
 
-    #[vec_db_edge(
+    #[has_many(
         root_model_field = "employment",
         association_type = "many_to_many",
         // model = "models::Employment",
         // foreign_key_field = "user_id",
     )]
-    employments: VecDbEdge<Employment>,
+    employments: HasMany<Employment>,
 }
 
 impl UserFields for User {
@@ -332,13 +332,13 @@ impl UserFields for User {
 pub struct Country {
     country: models::Country,
 
-    #[vec_db_edge(
+    #[has_many(
         foreign_key_field = "city_ids",
         root_model_field = "city",
         model = "models::City",
         // association_type = "one_to_many"
     )]
-    cities: VecDbEdge<City>,
+    cities: HasMany<City>,
 }
 
 impl CountryFields for Country {
@@ -365,12 +365,12 @@ impl CountryFields for Country {
 )]
 pub struct City {
     city: models::City,
-    #[db_edge(
+    #[has_one(
         foreign_key_field = "country_id",
         model = "models::Country",
         root_model_field = "country"
     )]
-    country: DbEdge<Country>,
+    country: HasOne<Country>,
 }
 
 impl CityFields for City {
@@ -415,18 +415,18 @@ impl CompanyFields for Company {
 )]
 pub struct Employment {
     employment: models::Employment,
-    #[db_edge(
+    #[has_one(
         foreign_key_field = "user_id",
         model = "models::User",
         root_model_field = "user"
     )]
-    user: DbEdge<User>,
-    #[db_edge(
+    user: HasOne<User>,
+    #[has_one(
         foreign_key_field = "company_id",
         model = "models::Company",
         root_model_field = "company"
     )]
-    company: DbEdge<Company>,
+    company: HasOne<Company>,
 }
 
 impl EmploymentFields for Employment {

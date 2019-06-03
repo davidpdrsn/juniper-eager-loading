@@ -10,7 +10,7 @@ mod derive_eager_loading;
 mod load_from_ids;
 mod load_from_models;
 
-#[proc_macro_derive(EagerLoading, attributes(eager_loading, db_edge, vec_db_edge))]
+#[proc_macro_derive(EagerLoading, attributes(eager_loading, has_one, option_has_one, has_many))]
 pub fn derive_eager_loading(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_eager_loading::gen_tokens(input)
 }
