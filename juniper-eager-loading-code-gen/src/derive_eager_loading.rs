@@ -172,6 +172,7 @@ impl DeriveData {
         let is_child_of_impl = self.is_child_of_impl(&data);
         let loaded_or_failed_child_impl = self.loaded_or_failed_child_impl(&data);
         let store_in_cache_impl = self.store_in_cache_impl(&data);
+        let assert_loaded_otherwise_failed_impl = self.assert_loaded_otherwise_failed_impl(&data);
 
         let context = self.field_context_name(&field);
 
@@ -193,6 +194,7 @@ impl DeriveData {
                 #is_child_of_impl
                 #loaded_or_failed_child_impl
                 #store_in_cache_impl
+                #assert_loaded_otherwise_failed_impl
             }
         })
     }
@@ -201,24 +203,13 @@ impl DeriveData {
         let foreign_key_field = &data.foreign_key_field;
 
         let child_ids_impl = if data.is_has_many {
-            // NOTE: Have to run a query
-            //
-            // Can probably make a new trait that defines how to load cities from a list of
-            // countries
-            //
-            // Could change LoadFromIds::Id to be type paramter and not associated type
-            // That way you could implement
-            // - LoadFromIds<i32> for City
-            // - LoadFromIds<Country> for City
-
             quote! {
-                // let _: () = models;
-                unimplemented!()
-                // let ids = models
-                //     .iter()
-                //     .map(|model| model.#foreign_key_field.clone())
-                //     .collect::<Vec<_>>();
-                // Ok(vec![ids])
+                let child_models = <
+                    Self::ChildModel
+                    as
+                    juniper_eager_loading::LoadFrom<Self::Model>
+                >::load(&models, db)?;
+                Ok(juniper_eager_loading::LoadResult::Models(child_models))
             }
         } else {
             quote! {
@@ -226,7 +217,7 @@ impl DeriveData {
                     .iter()
                     .map(|model| model.#foreign_key_field.clone())
                     .collect::<Vec<_>>();
-                Ok(ids)
+                Ok(juniper_eager_loading::LoadResult::Ids(ids))
             }
         };
 
@@ -236,7 +227,7 @@ impl DeriveData {
                 models: &[Self::Model],
                 db: &Self::Connection,
             ) -> Result<
-                Vec<Self::ChildId>,
+                juniper_eager_loading::LoadResult<Self::ChildId, Self::ChildModel>,
                 Self::Error,
             > {
                 #child_ids_impl
@@ -253,7 +244,11 @@ impl DeriveData {
                 db: &Self::Connection,
             ) -> Result<Vec<Self::ChildModel>, Self::Error> {
                 #normalize_ids
-                <Self::ChildModel as juniper_eager_loading::LoadFromIds>::load(&ids, db)
+                <
+                    Self::ChildModel
+                    as
+                    juniper_eager_loading::LoadFrom<_>
+                >::load(&ids, db)
             }
         }
     }
@@ -345,8 +340,10 @@ impl DeriveData {
             }
         } else if data.is_has_many {
             quote! {
-                node.#root_model_field.id ==
-                    child.#field_root_model_field.#foreign_key_field
+                dbg!(
+                    node.#root_model_field.id ==
+                        child.#field_root_model_field.#foreign_key_field
+                )
             }
         } else {
             quote! {
@@ -376,8 +373,8 @@ impl DeriveData {
         let inner_type = &data.inner_type;
 
         quote! {
-            fn loaded_or_failed_child(node: &mut Self, child: Option<&#inner_type>) {
-                node.#field_name.loaded_or_failed(child.cloned())
+            fn loaded_or_failed_child(node: &mut Self, child: #inner_type) {
+                node.#field_name.loaded_or_failed(child)
             }
         }
     }
@@ -389,6 +386,16 @@ impl DeriveData {
                 cache: &mut juniper_eager_loading::Cache<Self::Id>,
             ) {
                 cache.insert::<Self::ChildModel, _>(child.id, child.clone());
+            }
+        }
+    }
+
+    fn assert_loaded_otherwise_failed_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
+        let field_name = &data.field_name;
+
+        quote! {
+            fn assert_loaded_otherwise_failed(node: &mut Self) {
+                node.#field_name.assert_loaded_otherwise_failed();
             }
         }
     }

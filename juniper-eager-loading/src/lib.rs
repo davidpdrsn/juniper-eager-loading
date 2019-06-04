@@ -19,46 +19,7 @@ pub use juniper_eager_loading_code_gen::EagerLoading;
 
 /// Helpers related to Diesel. If you don't use Diesel you can ignore this.
 pub mod diesel {
-    pub use crate::impl_LoadFromModels;
-    pub use juniper_eager_loading_code_gen::{LoadFromIds, LoadFromModels};
-}
-
-#[macro_export]
-macro_rules! impl_LoadFromModels {
-    (
-        error = $error:path,
-        connection = $connection:path,
-
-        $(
-            $from:ident -> $to:ident
-            ( $model_key:ident -> $table:ident . $foreign_key:ident ),
-        )*
-    ) => {
-        $(
-            impl juniper_eager_loading::LoadFromModels<$from> for $to {
-                type Error = $error;
-                type Connection = $connection;
-
-                fn load(
-                    models: &[$from],
-                    db: &Self::Connection,
-                ) -> Result<Vec<$to>, Self::Error> {
-                    use diesel::pg::expression::dsl::any;
-
-                    let model_ids = models
-                        .iter()
-                        .map(|model| model.$model_key)
-                        .collect::<Vec<_>>();
-
-                    let res = $table::table
-                        .filter($table::$foreign_key.eq(any(model_ids)))
-                        .load::<$to>(db)?;
-
-                    Ok(res)
-                }
-            }
-        )*
-    }
+    pub use juniper_eager_loading_code_gen::LoadFrom;
 }
 
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
@@ -66,6 +27,13 @@ pub mod prelude {
     pub use super::EagerLoadAllChildren;
     pub use super::EagerLoadChildrenOfType;
     pub use super::GraphqlNodeForModel;
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum AssociationType {
+    HasOne,
+    OptionHasOne,
+    HasMany,
 }
 
 #[derive(Debug, Clone)]
@@ -87,13 +55,13 @@ impl<T> Default for HasOne<T> {
     }
 }
 
-impl<T> HasOne<T> {
+impl<T: std::fmt::Debug> HasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         match self {
             HasOne::Loaded(inner) => Ok(inner),
-            HasOne::NotLoaded => Err(Error::NotLoaded),
-            HasOne::LoadFailed => Err(Error::LoadFailed),
+            HasOne::NotLoaded => Err(Error::NotLoaded(AssociationType::HasOne)),
+            HasOne::LoadFailed => Err(Error::LoadFailed(AssociationType::HasOne)),
         }
     }
 
@@ -101,11 +69,16 @@ impl<T> HasOne<T> {
     ///
     /// If `inner` is a `Some` it will change `self` to `HasOne::Loaded`, otherwise
     /// `HasOne::LoadFailed`.
-    pub fn loaded_or_failed(&mut self, inner: Option<T>) {
-        if let Some(inner) = inner {
-            std::mem::replace(self, HasOne::Loaded(inner));
-        } else {
-            std::mem::replace(self, HasOne::LoadFailed);
+    pub fn loaded_or_failed(&mut self, inner: T) {
+        std::mem::replace(self, HasOne::Loaded(inner));
+    }
+
+    pub fn assert_loaded_otherwise_failed(&mut self) {
+        match self {
+            HasOne::NotLoaded => {
+                std::mem::replace(self, HasOne::LoadFailed);
+            }
+            _ => {}
         }
     }
 }
@@ -125,12 +98,12 @@ impl<T> Default for OptionHasOne<T> {
     }
 }
 
-impl<T> OptionHasOne<T> {
+impl<T: std::fmt::Debug> OptionHasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         match self {
             OptionHasOne::Loaded(inner) => Ok(inner),
-            OptionHasOne::NotLoaded => Err(Error::NotLoaded),
+            OptionHasOne::NotLoaded => Err(Error::NotLoaded(AssociationType::OptionHasOne)),
         }
     }
 
@@ -138,8 +111,17 @@ impl<T> OptionHasOne<T> {
     ///
     /// If `inner` is a `Some` it will change `self` to `OptionHasOne::Loaded(Some(_))`, otherwise
     /// `OptionHasOne::Loaded(None)`. This means it ignores loads that failed.
-    pub fn loaded_or_failed(&mut self, inner: Option<T>) {
-        std::mem::replace(self, OptionHasOne::Loaded(inner));
+    pub fn loaded_or_failed(&mut self, inner: T) {
+        std::mem::replace(self, OptionHasOne::Loaded(Some(inner)));
+    }
+
+    pub fn assert_loaded_otherwise_failed(&mut self) {
+        match self {
+            OptionHasOne::Loaded(_) => {}
+            OptionHasOne::NotLoaded => {
+                std::mem::replace(self, OptionHasOne::Loaded(None));
+            }
+        }
     }
 }
 
@@ -158,31 +140,25 @@ pub enum HasMany<T> {
     NotLoaded,
 }
 
-impl<T> HasMany<T> {
+impl<T: std::fmt::Debug> HasMany<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         match self {
             HasMany::Loaded(inner) => Ok(inner),
-            HasMany::NotLoaded => Err(Error::NotLoaded),
+            HasMany::NotLoaded => Err(Error::NotLoaded(AssociationType::HasMany)),
         }
     }
 
-    pub fn loaded_or_failed(&mut self, inner: Option<T>) {
+    pub fn loaded_or_failed(&mut self, inner: T) {
         match self {
-            HasMany::Loaded(models) => {
-                if let Some(inner) = inner {
-                    models.push(inner)
-                }
-            }
+            HasMany::Loaded(models) => models.push(inner),
             HasMany::NotLoaded => {
-                let loaded = if let Some(inner) = inner {
-                    HasMany::Loaded(vec![inner])
-                } else {
-                    HasMany::Loaded(vec![])
-                };
+                let loaded = HasMany::Loaded(vec![inner]);
                 std::mem::replace(self, loaded);
             }
         }
     }
+
+    pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
 pub trait GraphqlNodeForModel: Sized {
@@ -211,7 +187,8 @@ where
             Connection = Self::Connection,
             Error = Self::Error,
             Id = Self::Id,
-        > + EagerLoadAllChildren<Q>,
+        > + EagerLoadAllChildren<Q>
+        + Clone,
     Q: GenericQueryTrail<Child, Walked>,
 {
     type ChildModel;
@@ -220,7 +197,7 @@ where
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
-    ) -> Result<Vec<Self::ChildId>, Self::Error>;
+    ) -> Result<LoadResult<Self::ChildId, Self::ChildModel>, Self::Error>;
 
     fn load_children(
         ids: &[Self::ChildId],
@@ -229,7 +206,7 @@ where
 
     fn is_child_of(node: &Self, child: &Child) -> bool;
 
-    fn loaded_or_failed_child(node: &mut Self, child: Option<&Child>);
+    fn loaded_or_failed_child(node: &mut Self, child: Child);
 
     fn load_from_cache(
         ids: &[Self::ChildId],
@@ -238,6 +215,8 @@ where
 
     fn store_in_cache(child: &Self::ChildModel, cache: &mut Cache<Self::Id>);
 
+    fn assert_loaded_otherwise_failed(node: &mut Self);
+
     fn eager_load_children(
         nodes: &mut [Self],
         models: &[Self::Model],
@@ -245,9 +224,22 @@ where
         trail: &Q,
         cache: &mut Cache<Self::Id>,
     ) -> Result<(), Self::Error> {
-        let child_ids = Self::child_ids(models, db)?;
-        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
         let mut child_models = vec![];
+        let mut child_ids = vec![];
+        match Self::child_ids(models, db)? {
+            LoadResult::Ids(ids) => {
+                for id in ids {
+                    child_ids.push(id)
+                }
+            }
+            LoadResult::Models(models) => {
+                for model in models {
+                    child_models.push(model)
+                }
+            }
+        }
+
+        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
         let mut ids_not_in_cache = vec![];
         for result in cached_child_models {
             match result {
@@ -270,13 +262,22 @@ where
             .map(|child_model| Child::new_from_model(child_model))
             .collect::<Vec<_>>();
 
+        // Eager loading for all the children should be fine since they will all be used,
+        // since we got them all from the models
         Child::eager_load_all_children_for_each(&mut children, &child_models, db, trail, cache)?;
 
         for node in nodes {
-            let child = children
+            let matching_children = children
                 .iter()
-                .find(|child_model| Self::is_child_of(node, child_model));
-            Self::loaded_or_failed_child(node, child);
+                .filter(|child_model| Self::is_child_of(node, child_model))
+                .cloned()
+                .collect::<Vec<_>>();
+
+            for child in matching_children {
+                Self::loaded_or_failed_child(node, child);
+            }
+
+            Self::assert_loaded_otherwise_failed(node);
         }
 
         Ok(())
@@ -287,6 +288,12 @@ fn unique<T: Hash + Eq>(ts: Vec<T>) -> Vec<T> {
     use std::collections::HashSet;
     let set = ts.into_iter().collect::<HashSet<_>>();
     set.into_iter().collect()
+}
+
+#[derive(Debug)]
+pub enum LoadResult<A, B> {
+    Ids(Vec<A>),
+    Models(Vec<B>),
 }
 
 #[derive(Debug)]
@@ -338,17 +345,12 @@ where
 /// If you're using Diesel and PostgreSQL this could for example be implemented using [`any`] (or
 /// derived, see below).
 ///
-/// ### `#[derive(LoadFromIds)]`
+/// ### `#[derive(LoadFrom)]`
 ///
 /// TODO
 ///
 /// [`any`]: http://docs.diesel.rs/diesel/pg/expression/dsl/fn.any.html
-pub trait LoadFromIds: Sized {
-    /// The primary key type your model uses.
-    ///
-    /// If you're using Diesel this will normally be i32 or i64 but can be whatever you need.
-    type Id;
-
+pub trait LoadFrom<Id>: Sized {
     /// The error type the operation uses.
     ///
     /// If you're using Diesel this should be [`diesel::result::Error`].
@@ -364,21 +366,23 @@ pub trait LoadFromIds: Sized {
     type Connection;
 
     /// Perform the load.
-    fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
+    fn load(ids: &[Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
 pub enum Error {
-    NotLoaded,
-    LoadFailed,
+    NotLoaded(AssociationType),
+    LoadFailed(AssociationType),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::NotLoaded => write!(f, "`HasOne` should have been eager loaded, but wasn't"),
-            Error::LoadFailed => write!(f, "Failed to load `HasOne`"),
+            Error::NotLoaded(kind) => {
+                write!(f, "`{:?}` should have been eager loaded, but wasn't", kind)
+            }
+            Error::LoadFailed(kind) => write!(f, "Failed to load `{:?}`", kind),
         }
     }
 }

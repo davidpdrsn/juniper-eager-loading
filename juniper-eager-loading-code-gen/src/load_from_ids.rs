@@ -51,7 +51,7 @@ impl DeriveData {
         let error = self.error();
 
         self.tokens.extend(quote! {
-            impl juniper_eager_loading::LoadFromIds for #struct_name {
+            impl juniper_eager_loading::LoadFrom for #struct_name {
                 type Id = #id;
                 type Error = #error;
                 type Connection = #connection;
