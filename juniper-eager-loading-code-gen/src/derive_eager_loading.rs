@@ -201,8 +201,18 @@ impl DeriveData {
         let foreign_key_field = &data.foreign_key_field;
 
         let child_ids_impl = if data.is_has_many {
+            // NOTE: Have to run a query
+            //
+            // Can probably make a new trait that defines how to load cities from a list of
+            // countries
+            //
+            // Could change LoadFromIds::Id to be type paramter and not associated type
+            // That way you could implement
+            // - LoadFromIds<i32> for City
+            // - LoadFromIds<Country> for City
+
             quote! {
-                let _: () = models;
+                // let _: () = models;
                 unimplemented!()
                 // let ids = models
                 //     .iter()

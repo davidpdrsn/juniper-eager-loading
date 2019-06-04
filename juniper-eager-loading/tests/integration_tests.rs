@@ -107,24 +107,23 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFromModels<Country> for City {
-        type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
-
-        fn load(models: &[Country], db: &Self::Connection) -> Result<Vec<City>, Self::Error> {
-            let country_ids = models.iter().map(|country| country.id).collect::<Vec<_>>();
-            let mut cities = db
-                .cities
-                .all_values()
-                .into_iter()
-                .filter(|city| country_ids.contains(&city.country_id))
-                .cloned()
-                .collect::<Vec<_>>();
-            cities.sort_by_key(|city| city.id);
-            dbg!(&cities);
-            Ok(cities)
-        }
-    }
+    // impl juniper_eager_loading::LoadFromModels<Country> for City {
+    //     type Error = Box<dyn std::error::Error>;
+    //     type Connection = super::Db;
+    //     fn load(models: &[Country], db: &Self::Connection) -> Result<Vec<City>, Self::Error> {
+    //         let country_ids = models.iter().map(|country| country.id).collect::<Vec<_>>();
+    //         let mut cities = db
+    //             .cities
+    //             .all_values()
+    //             .into_iter()
+    //             .filter(|city| country_ids.contains(&city.country_id))
+    //             .cloned()
+    //             .collect::<Vec<_>>();
+    //         cities.sort_by_key(|city| city.id);
+    //         dbg!(&cities);
+    //         Ok(cities)
+    //     }
+    // }
 }
 
 pub struct Db {

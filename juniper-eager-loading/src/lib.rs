@@ -367,13 +367,6 @@ pub trait LoadFromIds: Sized {
     fn load(ids: &[Self::Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
-pub trait LoadFromModels<From>: Sized {
-    type Error;
-    type Connection;
-
-    fn load(models: &[From], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
-}
-
 #[derive(Debug)]
 #[allow(missing_copy_implementations)]
 pub enum Error {
