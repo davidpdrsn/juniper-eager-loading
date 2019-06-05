@@ -62,10 +62,6 @@ impl DeriveData {
         self.gen_eager_load_children_of_type();
         self.gen_eager_load_all_children();
 
-        if *self.struct_name() == "Country" {
-            println!("{}", self.tokens);
-        }
-
         self.tokens
     }
 
@@ -247,7 +243,7 @@ impl DeriveData {
                 <
                     Self::ChildModel
                     as
-                    juniper_eager_loading::LoadFrom<_>
+                    juniper_eager_loading::LoadFrom<Self::Id>
                 >::load(&ids, db)
             }
         }
@@ -340,10 +336,8 @@ impl DeriveData {
             }
         } else if data.is_has_many {
             quote! {
-                dbg!(
-                    node.#root_model_field.id ==
-                        child.#field_root_model_field.#foreign_key_field
-                )
+                  node.#root_model_field.id ==
+                      child.#field_root_model_field.#foreign_key_field
             }
         } else {
             quote! {

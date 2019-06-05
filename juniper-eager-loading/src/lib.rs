@@ -55,7 +55,7 @@ impl<T> Default for HasOne<T> {
     }
 }
 
-impl<T: std::fmt::Debug> HasOne<T> {
+impl<T> HasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         match self {
@@ -98,7 +98,7 @@ impl<T> Default for OptionHasOne<T> {
     }
 }
 
-impl<T: std::fmt::Debug> OptionHasOne<T> {
+impl<T> OptionHasOne<T> {
     /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         match self {
@@ -140,7 +140,7 @@ pub enum HasMany<T> {
     NotLoaded,
 }
 
-impl<T: std::fmt::Debug> HasMany<T> {
+impl<T> HasMany<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         match self {
             HasMany::Loaded(inner) => Ok(inner),
@@ -158,7 +158,15 @@ impl<T: std::fmt::Debug> HasMany<T> {
         }
     }
 
-    pub fn assert_loaded_otherwise_failed(&mut self) {}
+    pub fn assert_loaded_otherwise_failed(&mut self) {
+        match self {
+            HasMany::Loaded(models) => {}
+            HasMany::NotLoaded => {
+                let loaded = HasMany::Loaded(vec![]);
+                std::mem::replace(self, loaded);
+            }
+        }
+    }
 }
 
 pub trait GraphqlNodeForModel: Sized {
