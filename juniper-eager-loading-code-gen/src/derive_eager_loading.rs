@@ -120,34 +120,36 @@ impl DeriveData {
 
         let struct_name = self.struct_name();
 
-        let is_has_many = is_has_many(&field.ty)?;
-        let is_option_has_one = is_option_has_one(&field.ty)?;
+        let association_type = association_type(&field.ty)?;
 
-        let args = if is_has_many {
-            let args = parse_field_args::<HasMany>(&field)
-                .unwrap_or_else(|e| panic!("{}", e))
-                .has_many;
-            FieldArgs::from(args)
-        } else if is_option_has_one {
-            let args = parse_field_args::<OptionHasOne>(&field)
-                .unwrap_or_else(|e| panic!("{}", e))
-                .option_has_one;
-            FieldArgs::from(args)
-        } else {
-            let args = parse_field_args::<HasOne>(&field)
-                .unwrap_or_else(|e| panic!("{}", e))
-                .has_one;
-            FieldArgs::from(args)
+        let args = match association_type {
+            AssociationType::HasOne => {
+                let args = parse_field_args::<HasOne>(&field)
+                    .unwrap_or_else(|e| panic!("{}", e))
+                    .has_one;
+                FieldArgs::from(args)
+            }
+            AssociationType::OptionHasOne => {
+                let args = parse_field_args::<OptionHasOne>(&field)
+                    .unwrap_or_else(|e| panic!("{}", e))
+                    .option_has_one;
+                FieldArgs::from(args)
+            }
+            AssociationType::HasMany => {
+                let args = parse_field_args::<HasMany>(&field)
+                    .unwrap_or_else(|e| panic!("{}", e))
+                    .has_many;
+                FieldArgs::from(args)
+            }
         };
 
         let field_name = field.ident.as_ref().unwrap_or_else(|| {
             panic!("Found `juniper_eager_loading::HasOne` field without a name")
         });
 
-        let foreign_key_field_default = if is_has_many {
-            self.struct_name()
-        } else {
-            &field_name
+        let foreign_key_field_default = match association_type {
+            AssociationType::HasMany => self.struct_name(),
+            AssociationType::HasOne | AssociationType::OptionHasOne => &field_name,
         };
 
         let data = FieldDeriveData {
@@ -156,8 +158,7 @@ impl DeriveData {
             root_model_field: &self.root_model_field(),
             foreign_key_field: args.foreign_key_field(foreign_key_field_default),
             field_root_model_field: args.root_model_field(&field_name),
-            is_has_many,
-            is_option_has_one,
+            association_type,
         };
 
         let child_model = args.model(&inner_type);
@@ -198,22 +199,25 @@ impl DeriveData {
     fn child_ids_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
         let foreign_key_field = &data.foreign_key_field;
 
-        let child_ids_impl = if data.is_has_many {
-            quote! {
-                let child_models = <
-                    Self::ChildModel
-                    as
-                    juniper_eager_loading::LoadFrom<Self::Model>
-                >::load(&models, db)?;
-                Ok(juniper_eager_loading::LoadResult::Models(child_models))
+        let child_ids_impl = match data.association_type {
+            AssociationType::HasOne | AssociationType::OptionHasOne => {
+                quote! {
+                    let ids = models
+                        .iter()
+                        .map(|model| model.#foreign_key_field.clone())
+                        .collect::<Vec<_>>();
+                    Ok(juniper_eager_loading::LoadResult::Ids(ids))
+                }
             }
-        } else {
-            quote! {
-                let ids = models
-                    .iter()
-                    .map(|model| model.#foreign_key_field.clone())
-                    .collect::<Vec<_>>();
-                Ok(juniper_eager_loading::LoadResult::Ids(ids))
+            AssociationType::HasMany => {
+                quote! {
+                    let child_models = <
+                        Self::ChildModel
+                        as
+                        juniper_eager_loading::LoadFrom<Self::Model>
+                    >::load(&models, db)?;
+                    Ok(juniper_eager_loading::LoadResult::Models(child_models))
+                }
             }
         };
 
@@ -250,65 +254,73 @@ impl DeriveData {
     }
 
     fn normalize_ids(&self, data: &FieldDeriveData<'_>) -> TokenStream {
-        if data.is_option_has_one {
-            quote! {
-                let ids = ids
-                    .into_iter()
-                    .filter_map(|id| id .as_ref())
-                    .cloned()
-                    .collect::<Vec<_>>();
+        match data.association_type {
+            AssociationType::HasOne => {
+                quote! {}
             }
-        } else if data.is_has_many {
-            quote! {
-                let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
+            AssociationType::OptionHasOne => {
+                quote! {
+                    let ids = ids
+                        .into_iter()
+                        .filter_map(|id| id .as_ref())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                }
             }
-        } else {
-            quote! {}
+            AssociationType::HasMany => {
+                quote! {
+                    let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
+                }
+            }
         }
     }
 
     fn load_from_cache_impl(&self, data: &FieldDeriveData<'_>) -> TokenStream {
         let normalize_ids = self.normalize_ids(data);
 
-        let load_from_cache_impl = if data.is_option_has_one {
-            quote! {
-                #normalize_ids
-                ids.into_iter().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::CacheLoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        juniper_eager_loading::CacheLoadResult::Missing(Some(id))
-                    }
-                }).collect::<Vec<_>>()
+        let load_from_cache_impl = match data.association_type {
+            AssociationType::HasOne => {
+                quote! {
+                    ids.into_iter().cloned().map(|id| {
+                        if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                            juniper_eager_loading::CacheLoadResult::Loaded(
+                                std::clone::Clone::clone(model)
+                            )
+                        } else {
+                            juniper_eager_loading::CacheLoadResult::Missing(id)
+                        }
+                    }).collect::<Vec<_>>()
+                }
             }
-        } else if data.is_has_many {
-            quote! {
-                #normalize_ids
-                ids.into_iter().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::CacheLoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        let mut missing = Vec::with_capacity(1);
-                        missing.push(id);
-                        juniper_eager_loading::CacheLoadResult::Missing(missing)
-                    }
-                }).collect::<Vec<_>>()
+            AssociationType::OptionHasOne => {
+                quote! {
+                    #normalize_ids
+                    ids.into_iter().map(|id| {
+                        if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                            juniper_eager_loading::CacheLoadResult::Loaded(
+                                std::clone::Clone::clone(model)
+                            )
+                        } else {
+                            juniper_eager_loading::CacheLoadResult::Missing(Some(id))
+                        }
+                    }).collect::<Vec<_>>()
+                }
             }
-        } else {
-            quote! {
-                ids.into_iter().cloned().map(|id| {
-                    if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
-                        juniper_eager_loading::CacheLoadResult::Loaded(
-                            std::clone::Clone::clone(model)
-                        )
-                    } else {
-                        juniper_eager_loading::CacheLoadResult::Missing(id)
-                    }
-                }).collect::<Vec<_>>()
+            AssociationType::HasMany => {
+                quote! {
+                    #normalize_ids
+                    ids.into_iter().map(|id| {
+                        if let Some(model) = cache.get::<Self::ChildModel, _>(id) {
+                            juniper_eager_loading::CacheLoadResult::Loaded(
+                                std::clone::Clone::clone(model)
+                            )
+                        } else {
+                            let mut missing = Vec::with_capacity(1);
+                            missing.push(id);
+                            juniper_eager_loading::CacheLoadResult::Missing(missing)
+                        }
+                    }).collect::<Vec<_>>()
+                }
             }
         };
 
@@ -330,18 +342,22 @@ impl DeriveData {
         let field_root_model_field = &data.field_root_model_field;
         let inner_type = &data.inner_type;
 
-        let is_child_of_impl = if data.is_option_has_one {
-            quote! {
-                node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
+        let is_child_of_impl = match data.association_type {
+            AssociationType::HasOne => {
+                quote! {
+                    node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
+                }
             }
-        } else if data.is_has_many {
-            quote! {
-                  node.#root_model_field.id ==
-                      child.#field_root_model_field.#foreign_key_field
+            AssociationType::OptionHasOne => {
+                quote! {
+                    node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
+                }
             }
-        } else {
-            quote! {
-                node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
+            AssociationType::HasMany => {
+                quote! {
+                      node.#root_model_field.id ==
+                          child.#field_root_model_field.#foreign_key_field
+                }
             }
         };
 
@@ -353,12 +369,16 @@ impl DeriveData {
     }
 
     fn child_id(&self, data: &FieldDeriveData<'_>) -> TokenStream {
-        if data.is_option_has_one {
-            quote! { Option<Self::Id> }
-        } else if data.is_has_many {
-            quote! { Vec<Self::Id> }
-        } else {
-            quote! { Self::Id }
+        match data.association_type {
+            AssociationType::HasOne => {
+                quote! { Self::Id }
+            }
+            AssociationType::OptionHasOne => {
+                quote! { Option<Self::Id> }
+            }
+            AssociationType::HasMany => {
+                quote! { Vec<Self::Id> }
+            }
         }
     }
 
@@ -521,7 +541,7 @@ fn get_type_from_association(ty: &syn::Type) -> Option<&syn::Type> {
     Some(ty)
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum AssociationType {
     HasOne,
     OptionHasOne,
@@ -546,14 +566,6 @@ fn association_type(ty: &syn::Type) -> Option<AssociationType> {
 
 fn is_association_field(ty: &syn::Type) -> bool {
     association_type(ty).is_some()
-}
-
-fn is_option_has_one(ty: &syn::Type) -> Option<bool> {
-    Some(association_type(ty)? == AssociationType::OptionHasOne)
-}
-
-fn is_has_many(ty: &syn::Type) -> Option<bool> {
-    Some(association_type(ty)? == AssociationType::HasMany)
 }
 
 fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
@@ -585,12 +597,12 @@ fn type_to_string(ty: &syn::Type) -> String {
     tokenized.to_string()
 }
 
+#[allow(dead_code)]
 struct FieldDeriveData<'a> {
     foreign_key_field: TokenStream,
     field_root_model_field: TokenStream,
     root_model_field: &'a TokenStream,
     inner_type: &'a syn::Type,
     field_name: &'a Ident,
-    is_option_has_one: bool,
-    is_has_many: bool,
+    association_type: AssociationType,
 }

@@ -24,6 +24,7 @@ graphql_schema! {
         id: Int!
         country: Country!
         city: City
+        employments: [Employment!]!
     }
 
     type Country {
@@ -34,6 +35,17 @@ graphql_schema! {
     type City {
         id: Int!
         country: Country!
+    }
+
+    type Company {
+        id: Int!
+        name: String!
+    }
+
+    type Employment {
+        id: Int!
+        user: User!
+        company: Company!
     }
 }
 
@@ -54,6 +66,19 @@ mod models {
     pub struct City {
         pub id: i32,
         pub country_id: i32,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Company {
+        pub id: i32,
+        pub name: String,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Employment {
+        pub id: i32,
+        pub user_id: i32,
+        pub company_id: i32,
     }
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
@@ -104,6 +129,38 @@ mod models {
         }
     }
 
+    impl juniper_eager_loading::LoadFrom<i32> for Company {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let models = db
+                .companies
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(models)
+        }
+    }
+
+    impl juniper_eager_loading::LoadFrom<i32> for Employment {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let models = db
+                .employments
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(models)
+        }
+    }
+
     impl juniper_eager_loading::LoadFrom<Country> for City {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
@@ -123,12 +180,34 @@ mod models {
             Ok(cities)
         }
     }
+
+    impl juniper_eager_loading::LoadFrom<User> for Employment {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let user_ids = users
+                .iter()
+                .map(|user| user.id)
+                .collect::<Vec<_>>();
+            let employments = db
+                .employments
+                .all_values()
+                .into_iter()
+                .filter(|employment| user_ids.contains(&employment.user_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(employments)
+        }
+    }
 }
 
 pub struct Db {
     users: StatsHash<i32, models::User>,
     countries: StatsHash<i32, models::Country>,
     cities: StatsHash<i32, models::City>,
+    companies: StatsHash<i32, models::Company>,
+    employments: StatsHash<i32, models::Employment>,
 }
 
 pub struct Context {
@@ -184,6 +263,7 @@ impl MutationFields for Mutation {
 )]
 pub struct User {
     user: models::User,
+
     // #[has_one(
     //     model = "models::Country",
     //     foreign_key_field = "country_id",
@@ -191,6 +271,7 @@ pub struct User {
     // )]
     #[has_one(default)]
     country: HasOne<Country>,
+
     // #[has_one(
     //     model = "models::City",
     //     foreign_key_field = "city_id",
@@ -198,6 +279,12 @@ pub struct User {
     // )]
     #[option_has_one(default)]
     city: OptionHasOne<City>,
+
+    #[has_many(root_model_field = "employment")]
+    employments: HasMany<Employment>,
+
+    #[has_many(join_model = "Employment")]
+    companies: HasManyThrough<Company>,
 }
 
 impl UserFields for User {
@@ -219,6 +306,14 @@ impl UserFields for User {
         _trail: &QueryTrail<'_, City, Walked>,
     ) -> FieldResult<&Option<City>> {
         Ok(self.city.try_unwrap()?)
+    }
+
+    fn field_employments(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Employment, Walked>,
+    ) -> FieldResult<&Vec<Employment>> {
+        Ok(self.employments.try_unwrap()?)
     }
 }
 
@@ -287,6 +382,54 @@ impl CityFields for City {
     }
 }
 
+#[derive(Clone, Debug, EagerLoading)]
+#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+pub struct Company {
+    company: models::Company,
+}
+
+impl CompanyFields for Company {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+        Ok(&self.company.id)
+    }
+
+    fn field_name(&self, _executor: &Executor<'_, Context>) -> FieldResult<&String> {
+        Ok(&self.company.name)
+    }
+}
+
+#[derive(Clone, Debug, EagerLoading)]
+#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+pub struct Employment {
+    employment: models::Employment,
+    #[has_one(default)]
+    user: HasOne<User>,
+    #[has_one(default)]
+    company: HasOne<Company>,
+}
+
+impl EmploymentFields for Employment {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+        Ok(&self.employment.id)
+    }
+
+    fn field_user(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, User, Walked>,
+    ) -> FieldResult<&User> {
+        Ok(self.user.try_unwrap()?)
+    }
+
+    fn field_company(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Company, Walked>,
+    ) -> FieldResult<&Company> {
+        Ok(self.company.try_unwrap()?)
+    }
+}
+
 #[test]
 fn loading_users() {
     let mut countries = StatsHash::new("countries");
@@ -321,6 +464,8 @@ fn loading_users() {
         users,
         countries,
         cities,
+        employments: StatsHash::new("employments"),
+        companies: StatsHash::new("companies"),
     };
     let (json, counts) = run_query("query Test { users { id } }", db);
 
@@ -406,6 +551,8 @@ fn loading_users_and_associations() {
         users,
         countries,
         cities,
+        employments: StatsHash::new("employments"),
+        companies: StatsHash::new("companies"),
     };
 
     let (json, counts) = run_query(
@@ -501,6 +648,8 @@ fn test_caching() {
         users,
         countries,
         cities,
+        employments: StatsHash::new("employments"),
+        companies: StatsHash::new("companies"),
     };
 
     let (json, counts) = run_query(
@@ -556,10 +705,110 @@ fn test_caching() {
     assert_eq!(2, counts.city_reads);
 }
 
+#[test]
+fn test_loading_has_many_through() {
+    let mut cities = StatsHash::new("cities");
+    let mut companies = StatsHash::new("companies");
+    let mut countries = StatsHash::new("countries");
+    let mut employments = StatsHash::new("employments");
+    let mut users = StatsHash::new("users");
+
+    let mut country = models::Country { id: 1 };
+    countries.insert(country.id, country.clone());
+
+    let mut tonsser = models::Company {
+        id: 2,
+        name: "Tonsser".to_string(),
+    };
+    companies.insert(tonsser.id, tonsser.clone());
+
+    let mut peakon = models::Company {
+        id: 3,
+        name: "Peakon".to_string(),
+    };
+    companies.insert(peakon.id, peakon.clone());
+
+    let user = models::User {
+        id: 4,
+        country_id: country.id,
+        city_id: None,
+    };
+    users.insert(user.id, user.clone());
+
+    let mut tonsser_employment = models::Employment {
+        id: 5,
+        user_id: user.id,
+        company_id: tonsser.id,
+    };
+    employments.insert(tonsser_employment.id, tonsser_employment.clone());
+
+    let mut peakon_employment = models::Employment {
+        id: 6,
+        user_id: user.id,
+        company_id: peakon.id,
+    };
+    employments.insert(peakon_employment.id, peakon_employment.clone());
+
+    let db = Db {
+        cities,
+        companies,
+        countries,
+        employments,
+        users,
+    };
+
+    let (json, counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                employments {
+                    user { id }
+                    company { id name }
+                }
+                companies { id name }
+            }
+        }
+    "#,
+        db,
+    );
+
+    assert_json_eq!(
+        json!({
+            "users": [
+                {
+                    "id": user.id,
+                    "employments": [
+                        {
+                            "user": { "id": user.id },
+                            "company": { "id": peakon.id, "name": peakon.name },
+                        },
+                        {
+                            "user": { "id": user.id },
+                            "company": { "id": tonsser.id, "name": tonsser.name },
+                        },
+                    ],
+                    "companies": [
+                        { "id": peakon.id, "name": peakon.name },
+                        { "id": tonsser.id, "name": tonsser.name },
+                    ],
+                },
+            ]
+        }),
+        json,
+    );
+
+    // assert_eq!(n, counts.user_reads);
+    // assert_eq!(n, counts.country_reads);
+    // assert_eq!(n, counts.city_reads);
+}
+
 struct DbStats {
     user_reads: usize,
     country_reads: usize,
     city_reads: usize,
+    company_reads: usize,
+    employment_reads: usize,
 }
 
 fn run_query(query: &str, db: Db) -> (Value, DbStats) {
@@ -591,6 +840,8 @@ fn run_query(query: &str, db: Db) -> (Value, DbStats) {
             user_reads: ctx.db.users.reads_count(),
             country_reads: ctx.db.countries.reads_count(),
             city_reads: ctx.db.cities.reads_count(),
+            company_reads: ctx.db.companies.reads_count(),
+            employment_reads: ctx.db.employments.reads_count(),
         },
     )
 }
