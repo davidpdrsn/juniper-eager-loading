@@ -1,19 +1,21 @@
 #![deny(
     // missing_docs,
-    missing_debug_implementations,
+    dead_code,
     missing_copy_implementations,
+    missing_debug_implementations,
     trivial_casts,
     trivial_numeric_casts,
     unsafe_code,
     unstable_features,
     unused_import_braces,
+    unused_imports,
+    unused_must_use,
     unused_qualifications,
-    unused_must_use
+    unused_variables,
 )]
 
 use juniper_from_schema::Walked;
-use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{fmt, hash::Hash};
 
 pub use juniper_eager_loading_code_gen::EagerLoading;
 
@@ -34,21 +36,16 @@ pub enum AssociationType {
     HasOne,
     OptionHasOne,
     HasMany,
+    HasManyThrough,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum HasOne<T> {
-    /// The associated value was loaded.
     Loaded(T),
-
-    /// The associated value has not yet been loaded.
     NotLoaded,
-
-    /// The associated value should have been loaded, but something went wrong.
     LoadFailed,
 }
 
-/// Defaults to `HasOne::NotLoaded`
 impl<T> Default for HasOne<T> {
     fn default() -> Self {
         HasOne::NotLoaded
@@ -56,7 +53,6 @@ impl<T> Default for HasOne<T> {
 }
 
 impl<T> HasOne<T> {
-    /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         match self {
             HasOne::Loaded(inner) => Ok(inner),
@@ -65,10 +61,6 @@ impl<T> HasOne<T> {
         }
     }
 
-    /// Assign some potentially loaded value.
-    ///
-    /// If `inner` is a `Some` it will change `self` to `HasOne::Loaded`, otherwise
-    /// `HasOne::LoadFailed`.
     pub fn loaded_or_failed(&mut self, inner: T) {
         std::mem::replace(self, HasOne::Loaded(inner));
     }
@@ -83,12 +75,9 @@ impl<T> HasOne<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum OptionHasOne<T> {
-    /// The associated value was loaded.
     Loaded(Option<T>),
-
-    /// The associated value has not yet been loaded.
     NotLoaded,
 }
 
@@ -99,7 +88,6 @@ impl<T> Default for OptionHasOne<T> {
 }
 
 impl<T> OptionHasOne<T> {
-    /// Borrow the loaded value or get an error if something went wrong.
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         match self {
             OptionHasOne::Loaded(inner) => Ok(inner),
@@ -107,10 +95,6 @@ impl<T> OptionHasOne<T> {
         }
     }
 
-    /// Assign some potentially loaded value.
-    ///
-    /// If `inner` is a `Some` it will change `self` to `OptionHasOne::Loaded(Some(_))`, otherwise
-    /// `OptionHasOne::Loaded(None)`. This means it ignores loads that failed.
     pub fn loaded_or_failed(&mut self, inner: T) {
         std::mem::replace(self, OptionHasOne::Loaded(Some(inner)));
     }
@@ -125,19 +109,16 @@ impl<T> OptionHasOne<T> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum HasMany<T> {
+    Loaded(Vec<T>),
+    NotLoaded,
+}
+
 impl<T> Default for HasMany<T> {
     fn default() -> Self {
         HasMany::NotLoaded
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum HasMany<T> {
-    /// The associated values were loaded.
-    Loaded(Vec<T>),
-
-    /// The associated values has not yet been loaded.
-    NotLoaded,
 }
 
 impl<T> HasMany<T> {
@@ -160,9 +141,50 @@ impl<T> HasMany<T> {
 
     pub fn assert_loaded_otherwise_failed(&mut self) {
         match self {
-            HasMany::Loaded(models) => {}
+            HasMany::Loaded(_) => {}
             HasMany::NotLoaded => {
                 let loaded = HasMany::Loaded(vec![]);
+                std::mem::replace(self, loaded);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum HasManyThrough<T> {
+    Loaded(Vec<T>),
+    NotLoaded,
+}
+
+impl<T> Default for HasManyThrough<T> {
+    fn default() -> Self {
+        HasManyThrough::NotLoaded
+    }
+}
+
+impl<T> HasManyThrough<T> {
+    pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
+        match self {
+            HasManyThrough::Loaded(inner) => Ok(inner),
+            HasManyThrough::NotLoaded => Err(Error::NotLoaded(AssociationType::HasManyThrough)),
+        }
+    }
+
+    pub fn loaded_or_failed(&mut self, inner: T) {
+        match self {
+            HasManyThrough::Loaded(models) => models.push(inner),
+            HasManyThrough::NotLoaded => {
+                let loaded = HasManyThrough::Loaded(vec![inner]);
+                std::mem::replace(self, loaded);
+            }
+        }
+    }
+
+    pub fn assert_loaded_otherwise_failed(&mut self) {
+        match self {
+            HasManyThrough::Loaded(_) => {}
+            HasManyThrough::NotLoaded => {
+                let loaded = HasManyThrough::Loaded(vec![]);
                 std::mem::replace(self, loaded);
             }
         }
@@ -187,7 +209,7 @@ pub trait GraphqlNodeForModel: Sized {
 
 pub trait GenericQueryTrail<T, K> {}
 
-pub trait EagerLoadChildrenOfType<Child, Q, C>
+pub trait EagerLoadChildrenOfType<Child, QueryTrailT, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
     Child: GraphqlNodeForModel<
@@ -195,33 +217,27 @@ where
             Connection = Self::Connection,
             Error = Self::Error,
             Id = Self::Id,
-        > + EagerLoadAllChildren<Q>
+        > + EagerLoadAllChildren<QueryTrailT>
         + Clone,
-    Q: GenericQueryTrail<Child, Walked>,
+    QueryTrailT: GenericQueryTrail<Child, Walked>,
+    JoinModel: 'static + Clone + ?Sized,
 {
-    type ChildModel;
+    type ChildModel: Clone;
     type ChildId: Hash + Eq;
 
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
-    ) -> Result<LoadResult<Self::ChildId, Self::ChildModel>, Self::Error>;
+    ) -> Result<LoadResult<Self::ChildId, (Self::ChildModel, JoinModel)>, Self::Error>;
 
     fn load_children(
         ids: &[Self::ChildId],
         db: &Self::Connection,
     ) -> Result<Vec<Self::ChildModel>, Self::Error>;
 
-    fn is_child_of(node: &Self, child: &Child) -> bool;
+    fn is_child_of(node: &Self, child: &(Child, &JoinModel)) -> bool;
 
     fn loaded_or_failed_child(node: &mut Self, child: Child);
-
-    fn load_from_cache(
-        ids: &[Self::ChildId],
-        cache: &Cache<Self::Id>,
-    ) -> Vec<CacheLoadResult<Self::ChildModel, Self::ChildId>>;
-
-    fn store_in_cache(child: &Self::ChildModel, cache: &mut Cache<Self::Id>);
 
     fn assert_loaded_otherwise_failed(node: &mut Self);
 
@@ -229,50 +245,63 @@ where
         nodes: &mut [Self],
         models: &[Self::Model],
         db: &Self::Connection,
-        trail: &Q,
-        cache: &mut Cache<Self::Id>,
+        trail: &QueryTrailT,
     ) -> Result<(), Self::Error> {
-        let mut child_models = vec![];
-        let mut child_ids = vec![];
-        match Self::child_ids(models, db)? {
-            LoadResult::Ids(ids) => {
-                for id in ids {
-                    child_ids.push(id)
-                }
-            }
-            LoadResult::Models(models) => {
-                for model in models {
-                    child_models.push(model)
-                }
-            }
-        }
+        let child_models = match Self::child_ids(models, db)? {
+            LoadResult::Ids(child_ids) => {
+                assert!(same_type::<JoinModel, ()>());
 
-        let cached_child_models = Self::load_from_cache(&child_ids, &cache);
-        let mut ids_not_in_cache = vec![];
-        for result in cached_child_models {
-            match result {
-                CacheLoadResult::Loaded(model) => child_models.push(model),
-                CacheLoadResult::Missing(id) => ids_not_in_cache.push(id),
-            }
-        }
-        ids_not_in_cache = unique(ids_not_in_cache);
+                let loaded_models = Self::load_children(&child_ids, db)?;
+                loaded_models
+                    .into_iter()
+                    .map(|model| {
+                        #[allow(unsafe_code)]
+                        let join_model = unsafe {
+                            // This branch will only ever be called if `JoinModel` is `()`. That
+                            // happens for all the `Has*` types except `HasManyThrough`.
+                            //
+                            // `HasManyThrough` requires something to join the two types on,
+                            // therefore `child_ids` will return a variant of `LoadResult::Models`
+                            std::mem::transmute_copy::<(), JoinModel>(&())
+                        };
 
-        if !ids_not_in_cache.is_empty() {
-            let loaded_models = Self::load_children(&ids_not_in_cache, db)?;
-            for model in &loaded_models {
-                Self::store_in_cache(model, cache);
+                        (model, join_model)
+                    })
+                    .collect::<Vec<_>>()
             }
-            child_models.extend(loaded_models);
-        }
+            LoadResult::Models(model_and_join_pairs) => model_and_join_pairs,
+        };
 
-        let mut children = child_models
+        let children = child_models
             .iter()
-            .map(|child_model| Child::new_from_model(child_model))
+            .map(|child_model| (Child::new_from_model(&child_model.0), child_model.1.clone()))
             .collect::<Vec<_>>();
 
-        // Eager loading for all the children should be fine since they will all be used,
-        // since we got them all from the models
-        Child::eager_load_all_children_for_each(&mut children, &child_models, db, trail, cache)?;
+        let mut children_without_join_models =
+            children.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+
+        let child_models_without_join_models =
+            child_models.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+
+        let len_before = child_models_without_join_models.len();
+
+        Child::eager_load_all_children_for_each(
+            &mut children_without_join_models,
+            &child_models_without_join_models,
+            db,
+            trail,
+        )?;
+
+        assert_eq!(len_before, child_models_without_join_models.len());
+
+        let children = children_without_join_models
+            .into_iter()
+            .enumerate()
+            .map(|(idx, child)| {
+                let join_model = &children[idx].1;
+                (child, join_model)
+            })
+            .collect::<Vec<_>>();
 
         for node in nodes {
             let matching_children = children
@@ -282,7 +311,7 @@ where
                 .collect::<Vec<_>>();
 
             for child in matching_children {
-                Self::loaded_or_failed_child(node, child);
+                Self::loaded_or_failed_child(node, child.0);
             }
 
             Self::assert_loaded_otherwise_failed(node);
@@ -292,10 +321,9 @@ where
     }
 }
 
-fn unique<T: Hash + Eq>(ts: Vec<T>) -> Vec<T> {
-    use std::collections::HashSet;
-    let set = ts.into_iter().collect::<HashSet<_>>();
-    set.into_iter().collect()
+fn same_type<A: 'static, B: 'static>() -> bool {
+    use std::any::TypeId;
+    TypeId::of::<A>() == TypeId::of::<B>()
 }
 
 #[derive(Debug)]
@@ -304,13 +332,7 @@ pub enum LoadResult<A, B> {
     Models(Vec<B>),
 }
 
-#[derive(Debug)]
-pub enum CacheLoadResult<A, B> {
-    Loaded(A),
-    Missing(B),
-}
-
-pub trait EagerLoadAllChildren<Q>
+pub trait EagerLoadAllChildren<QueryTrailT>
 where
     Self: GraphqlNodeForModel,
 {
@@ -318,29 +340,17 @@ where
         nodes: &mut [Self],
         models: &[Self::Model],
         db: &Self::Connection,
-        trail: &Q,
-        cache: &mut Cache<Self::Id>,
+        trail: &QueryTrailT,
     ) -> Result<(), Self::Error>;
-
-    fn eager_load_all_children_for_each_without_cache(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        db: &Self::Connection,
-        trail: &Q,
-    ) -> Result<(), Self::Error> {
-        let mut cache = Cache::disabled();
-        Self::eager_load_all_children_for_each(nodes, models, db, trail, &mut cache)
-    }
 
     fn eager_load_all_chilren(
         node: Self,
         models: &[Self::Model],
         db: &Self::Connection,
-        trail: &Q,
-        cache: &mut Cache<Self::Id>,
+        trail: &QueryTrailT,
     ) -> Result<Self, Self::Error> {
         let mut nodes = vec![node];
-        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail, cache)?;
+        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail)?;
 
         // This is safe because we just made a vec with exactly one element and
         // eager_load_all_children_for_each doesn't remove things from the vec
@@ -348,32 +358,11 @@ where
     }
 }
 
-/// Given a list of ids how should they be loaded from the data store?
-///
-/// If you're using Diesel and PostgreSQL this could for example be implemented using [`any`] (or
-/// derived, see below).
-///
-/// ### `#[derive(LoadFrom)]`
-///
-/// TODO
-///
-/// [`any`]: http://docs.diesel.rs/diesel/pg/expression/dsl/fn.any.html
 pub trait LoadFrom<Id>: Sized {
-    /// The error type the operation uses.
-    ///
-    /// If you're using Diesel this should be [`diesel::result::Error`].
-    ///
-    /// [`diesel::result::Error`]: http://docs.diesel.rs/diesel/result/enum.Error.html
     type Error;
 
-    /// The connection type you use.
-    ///
-    /// If you're using Diesel this will could for example be [`PgConnection`].
-    ///
-    /// [`PgConnection`]: http://docs.diesel.rs/diesel/pg/struct.PgConnection.html
     type Connection;
 
-    /// Perform the load.
     fn load(ids: &[Id], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
@@ -396,187 +385,3 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-#[derive(Debug)]
-pub enum Cache<K: 'static + Hash + Eq> {
-    #[doc(hidden)]
-    NoCaching,
-    #[doc(hidden)]
-    Cache(CacheInner<K>),
-}
-
-impl<K: 'static + Hash + Eq> Cache<K> {
-    pub fn new_from<T, F>(models: &[T], f: F) -> Self
-    where
-        T: 'static,
-        F: Fn(&T) -> (K, T),
-    {
-        let mut cache = Cache::new();
-        for model in models {
-            let (key, value) = f(model);
-            cache.insert::<T, _>(key, value);
-        }
-        cache
-    }
-
-    fn new() -> Self {
-        Cache::Cache(CacheInner::default())
-    }
-
-    pub fn disabled() -> Self {
-        Cache::NoCaching
-    }
-
-    pub fn insert<TypeKey, V>(&mut self, key: K, value: V)
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        match self {
-            Cache::NoCaching => {}
-            Cache::Cache(cache) => cache.insert::<TypeKey, _>(key, value),
-        }
-    }
-
-    pub fn get<TypeKey, V>(&self, key: K) -> Option<&V>
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        match self {
-            Cache::NoCaching => None,
-            Cache::Cache(cache) => cache.get::<TypeKey, _>(key),
-        }
-    }
-
-    pub fn hits(&self) -> usize {
-        match self {
-            Cache::NoCaching => 0,
-            Cache::Cache(cache) => cache.hits(),
-        }
-    }
-
-    pub fn misses(&self) -> usize {
-        match self {
-            Cache::NoCaching => 0,
-            Cache::Cache(cache) => cache.misses(),
-        }
-    }
-
-    pub fn hit_rate(&self) -> f32 {
-        match self {
-            Cache::NoCaching => 0.,
-            Cache::Cache(_) => {
-                let hits = self.hits() as f32;
-                let misses = self.misses() as f32;
-                if hits == 0. && misses == 0. {
-                    0.
-                } else {
-                    hits / (hits + misses)
-                }
-            }
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct CacheInner<K: Hash + Eq> {
-    map: DynamicCache<K>,
-    hits: AtomicUsize,
-    misses: AtomicUsize,
-}
-
-impl<K: Hash + Eq> Default for CacheInner<K> {
-    fn default() -> Self {
-        CacheInner {
-            map: DynamicCache::new(),
-            hits: AtomicUsize::new(0),
-            misses: AtomicUsize::new(0),
-        }
-    }
-}
-
-impl<K: Hash + Eq> CacheInner<K> {
-    fn insert<TypeKey, V>(&mut self, key: K, value: V)
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        self.map.insert::<TypeKey, _>(key, value)
-    }
-
-    fn get<TypeKey, V>(&self, key: K) -> Option<&V>
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        let res = self.map.get::<TypeKey, _>(key);
-        if res.is_some() {
-            self.hits.fetch_add(1, Ordering::SeqCst);
-        } else {
-            self.misses.fetch_add(1, Ordering::SeqCst);
-        }
-        res
-    }
-
-    fn hits(&self) -> usize {
-        self.hits.load(Ordering::Relaxed)
-    }
-
-    fn misses(&self) -> usize {
-        self.misses.load(Ordering::Relaxed)
-    }
-}
-
-use std::any::{Any, TypeId};
-use std::{collections::HashMap, hash::Hash};
-
-#[derive(Debug)]
-struct DynamicCache<ValueKey>(HashMap<(Box<TypeId>, ValueKey), Box<Any>>)
-where
-    ValueKey: Hash + Eq;
-
-impl<ValueKey> DynamicCache<ValueKey>
-where
-    ValueKey: Hash + Eq,
-{
-    fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    fn insert<TypeKey, V>(&mut self, key: ValueKey, value: V)
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        let key = (Box::new(TypeId::of::<TypeKey>()), key);
-        self.0.insert(key, Box::new(value));
-    }
-
-    fn get<TypeKey, V>(&self, key: ValueKey) -> Option<&V>
-    where
-        TypeKey: 'static + ?Sized,
-        V: 'static,
-    {
-        let key = (Box::new(TypeId::of::<TypeKey>()), key);
-        self.0.get(&key).and_then(|value| value.downcast_ref())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[allow(unused_imports)]
-    use super::*;
-
-    #[test]
-    fn test_dynamic_cache() {
-        let mut cache = DynamicCache::new();
-
-        cache.insert::<i32, _>("key", 123);
-        cache.insert::<bool, _>("key", "bool value".to_string());
-
-        assert_eq!(Some(&123), cache.get::<i32, _>("key"));
-        assert_eq!(Some(&"bool value".to_string()), cache.get::<bool, _>("key"));
-    }
-}

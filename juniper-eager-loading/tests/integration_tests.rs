@@ -1,6 +1,8 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use juniper::{Executor, FieldResult};
-use juniper_eager_loading::{prelude::*, Cache, EagerLoading, HasMany, HasOne, OptionHasOne};
+use juniper_eager_loading::{
+    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
+};
 use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -24,7 +26,8 @@ graphql_schema! {
         id: Int!
         country: Country!
         city: City
-        employments: [Employment!]!
+        employments: [Employment!]! @juniper(ownership: "owned")
+        companies: [Company!]! @juniper(ownership: "owned")
     }
 
     type Country {
@@ -50,31 +53,31 @@ graphql_schema! {
 }
 
 mod models {
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct User {
         pub id: i32,
         pub country_id: i32,
         pub city_id: Option<i32>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Country {
         pub id: i32,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct City {
         pub id: i32,
         pub country_id: i32,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Company {
         pub id: i32,
         pub name: String,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Employment {
         pub id: i32,
         pub user_id: i32,
@@ -186,10 +189,7 @@ mod models {
         type Connection = super::Db;
 
         fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let user_ids = users
-                .iter()
-                .map(|user| user.id)
-                .collect::<Vec<_>>();
+            let user_ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
             let employments = db
                 .employments
                 .all_values()
@@ -197,6 +197,31 @@ mod models {
                 .filter(|employment| user_ids.contains(&employment.user_id))
                 .cloned()
                 .collect::<Vec<_>>();
+            Ok(employments)
+        }
+    }
+
+    impl juniper_eager_loading::LoadFrom<Employment> for Company {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(
+            employments: &[Employment],
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
+            let company_ids = employments
+                .iter()
+                .map(|employment| employment.company_id)
+                .collect::<Vec<_>>();
+
+            let employments = db
+                .companies
+                .all_values()
+                .into_iter()
+                .filter(|company| company_ids.contains(&company.id))
+                .cloned()
+                .collect::<Vec<_>>();
+
             Ok(employments)
         }
     }
@@ -234,11 +259,8 @@ impl QueryFields for Query {
             .collect::<Vec<_>>();
         user_models.sort_by_key(|user| user.id);
 
-        let mut cache =
-            Cache::new_from::<models::User, _>(&user_models, |user| (user.id, user.clone()));
-
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail, &mut cache)?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
 
         Ok(users)
     }
@@ -253,7 +275,7 @@ impl MutationFields for Mutation {
 }
 
 // The default values are commented out
-#[derive(Clone, Debug, EagerLoading)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
 #[eager_loading(
     connection = "Db",
     error = "Box<dyn std::error::Error>",
@@ -283,7 +305,12 @@ pub struct User {
     #[has_many(root_model_field = "employment")]
     employments: HasMany<Employment>,
 
-    #[has_many(join_model = "Employment")]
+    #[has_many_through(
+        // model = "models::Company",
+        // model_field = "company",
+        // join_model_field = "employment"
+        join_model = "models::Employment",
+    )]
     companies: HasManyThrough<Company>,
 }
 
@@ -312,13 +339,21 @@ impl UserFields for User {
         &self,
         _executor: &Executor<'_, Context>,
         _trail: &QueryTrail<'_, Employment, Walked>,
-    ) -> FieldResult<&Vec<Employment>> {
-        Ok(self.employments.try_unwrap()?)
+    ) -> FieldResult<Vec<Employment>> {
+        Ok(self.employments.try_unwrap()?.clone().sorted())
+    }
+
+    fn field_companies(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Company, Walked>,
+    ) -> FieldResult<Vec<Company>> {
+        Ok(self.companies.try_unwrap()?.clone().sorted())
     }
 }
 
-// #[derive(Clone, Debug)]
-#[derive(Clone, Debug, EagerLoading)]
+// #[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
     model = "models::Country",
     connection = "Db",
@@ -350,7 +385,7 @@ impl CountryFields for Country {
     }
 }
 
-#[derive(Clone, Debug, EagerLoading)]
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
     model = "models::City",
     id = "i32",
@@ -382,7 +417,7 @@ impl CityFields for City {
     }
 }
 
-#[derive(Clone, Debug, EagerLoading)]
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
 pub struct Company {
     company: models::Company,
@@ -398,7 +433,7 @@ impl CompanyFields for Company {
     }
 }
 
-#[derive(Clone, Debug, EagerLoading)]
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
 pub struct Employment {
     employment: models::Employment,
@@ -615,7 +650,6 @@ fn loading_users_and_associations() {
         assert!([city.id, other_city.id].contains(&id));
     }
 
-    // TODO
     assert_eq!(1, counts.user_reads);
     assert_eq!(1, counts.country_reads);
     assert_eq!(2, counts.city_reads);
@@ -699,9 +733,7 @@ fn test_caching() {
     );
 
     assert_eq!(1, counts.user_reads);
-    assert_eq!(1, counts.country_reads);
-
-    // TODO: Removing the second read requires using the cache from `LoadFrom<Country> for City`
+    assert_eq!(3, counts.country_reads);
     assert_eq!(2, counts.city_reads);
 }
 
@@ -773,29 +805,29 @@ fn test_loading_has_many_through() {
         db,
     );
 
-    assert_json_eq!(
-        json!({
+    assert_json_include!(
+        expected: json!({
             "users": [
                 {
                     "id": user.id,
                     "employments": [
                         {
                             "user": { "id": user.id },
-                            "company": { "id": peakon.id, "name": peakon.name },
+                            "company": { "id": tonsser.id, "name": tonsser.name },
                         },
                         {
                             "user": { "id": user.id },
-                            "company": { "id": tonsser.id, "name": tonsser.name },
+                            "company": { "id": peakon.id, "name": peakon.name },
                         },
                     ],
                     "companies": [
-                        { "id": peakon.id, "name": peakon.name },
                         { "id": tonsser.id, "name": tonsser.name },
+                        { "id": peakon.id, "name": peakon.name },
                     ],
                 },
             ]
         }),
-        json,
+        actual: json,
     );
 
     // assert_eq!(n, counts.user_reads);
@@ -896,5 +928,16 @@ impl<K: Hash + Eq, V> StatsHash<K, V> {
 
     fn increment_reads_count(&self) {
         self.count.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+trait SortedExtension {
+    fn sorted(self) -> Self;
+}
+
+impl<T: std::cmp::Ord> SortedExtension for Vec<T> {
+    fn sorted(mut self) -> Self {
+        self.sort();
+        self
     }
 }

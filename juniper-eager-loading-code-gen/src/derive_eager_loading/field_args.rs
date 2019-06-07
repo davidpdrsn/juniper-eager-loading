@@ -69,6 +69,10 @@ pub struct OptionHasOne {
 
 #[derive(FromMeta)]
 pub struct HasOneInner {
+    #[darling(default)]
+    print: Option<()>,
+    #[darling(default)]
+    skip: Option<()>,
     #[allow(dead_code)]
     #[darling(default)]
     default: (),
@@ -88,15 +92,45 @@ pub struct HasMany {
 #[derive(FromMeta)]
 pub struct HasManyInner {
     #[darling(default)]
+    print: Option<()>,
+    #[darling(default)]
+    skip: Option<()>,
+    #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     #[darling(default)]
     model: Option<syn::Path>,
-    root_model_field: syn::Ident,
+    #[darling(default)]
+    root_model_field: Option<syn::Ident>,
+}
+
+#[derive(FromMeta)]
+pub struct HasManyThrough {
+    pub has_many_through: HasManyThroughInner,
+}
+
+#[derive(FromMeta)]
+pub struct HasManyThroughInner {
+    #[darling(default)]
+    print: Option<()>,
+    #[darling(default)]
+    skip: Option<()>,
+    #[darling(default)]
+    model: Option<syn::Path>,
+    join_model: syn::Path,
+    #[darling(default)]
+    model_field: Option<syn::Path>,
+    #[darling(default)]
+    join_model_field: Option<syn::Path>,
 }
 
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
+    join_model_field: Option<syn::Path>,
     model: Option<syn::Path>,
+    model_field: Option<syn::Path>,
+    pub join_model: Option<syn::Path>,
+    pub skip: bool,
+    pub print: bool,
     root_model_field: Option<syn::Ident>,
 }
 
@@ -129,6 +163,50 @@ impl FieldArgs {
             quote! { #field_name }
         }
     }
+
+    pub fn join_model(&self) -> TokenStream {
+        if let Some(inner) = &self.join_model {
+            quote! { #inner }
+        } else {
+            quote! { () }
+        }
+    }
+
+    pub fn model_field(&self, inner_type: &syn::Type) -> TokenStream {
+        if let Some(inner) = &self.model_field {
+            quote! { #inner }
+        } else {
+            let inner_type = type_to_string(inner_type).to_snake_case();
+            let inner_type = Ident::new(&inner_type, Span::call_site());
+            quote! { #inner_type }
+        }
+    }
+
+    pub fn join_model_field(&self) -> TokenStream {
+        if let Some(inner) = &self.join_model_field {
+            quote! { #inner }
+        } else {
+            if let Some(join_model) = &self.join_model {
+                let name = join_model.segments.last().unwrap();
+                let name = name.value();
+                let name = &name.ident;
+                let name = name.to_string().to_snake_case();
+                let name = Ident::new(&name, Span::call_site());
+                quote! { #name }
+            } else {
+                // This method is only used by `HasManyThrough` for which the `model_field` attribute is
+                // mandatory, so it will always be present when needed.
+                quote! { __eager_loading_unreachable }
+            }
+        }
+    }
+}
+
+fn type_to_string(ty: &syn::Type) -> String {
+    use quote::ToTokens;
+    let mut tokenized = quote! {};
+    ty.to_tokens(&mut tokenized);
+    tokenized.to_string()
 }
 
 impl From<HasOneInner> for FieldArgs {
@@ -137,6 +215,11 @@ impl From<HasOneInner> for FieldArgs {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
             root_model_field: inner.root_model_field,
+            join_model: None,
+            model_field: None,
+            join_model_field: None,
+            skip: inner.skip.is_some(),
+            print: inner.print.is_some(),
         }
     }
 }
@@ -146,7 +229,27 @@ impl From<HasManyInner> for FieldArgs {
         Self {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
-            root_model_field: Some(inner.root_model_field),
+            root_model_field: inner.root_model_field,
+            join_model: None,
+            model_field: None,
+            join_model_field: None,
+            skip: inner.skip.is_some(),
+            print: inner.print.is_some(),
+        }
+    }
+}
+
+impl From<HasManyThroughInner> for FieldArgs {
+    fn from(inner: HasManyThroughInner) -> Self {
+        Self {
+            foreign_key_field: None,
+            model: inner.model,
+            root_model_field: None,
+            join_model: Some(inner.join_model),
+            model_field: inner.model_field,
+            join_model_field: inner.join_model_field,
+            skip: inner.skip.is_some(),
+            print: inner.print.is_some(),
         }
     }
 }
