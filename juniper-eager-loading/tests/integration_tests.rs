@@ -28,6 +28,8 @@ graphql_schema! {
         city: City
         employments: [Employment!]! @juniper(ownership: "owned")
         companies: [Company!]! @juniper(ownership: "owned")
+        primaryEmployment: Employment @juniper(ownership: "owned")
+        primaryCompany: Company @juniper(ownership: "owned")
     }
 
     type Country {
@@ -82,6 +84,13 @@ mod models {
         pub id: i32,
         pub user_id: i32,
         pub company_id: i32,
+        pub primary: bool,
+    }
+
+    impl Employment {
+        pub fn primary(&self, _: &super::Db) -> bool {
+            self.primary
+        }
     }
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
@@ -312,6 +321,20 @@ pub struct User {
         join_model = "models::Employment",
     )]
     companies: HasManyThrough<Company>,
+
+    #[has_many(
+        root_model_field = "employment",
+        graphql_field = "primaryEmployment",
+        predicate_method = "primary"
+    )]
+    primary_employments: HasMany<Employment>,
+
+    #[has_many_through(
+        join_model = "models::Employment",
+        graphql_field = "primaryCompany",
+        predicate_method = "primary"
+    )]
+    primary_companies: HasManyThrough<Company>,
 }
 
 impl UserFields for User {
@@ -349,6 +372,40 @@ impl UserFields for User {
         _trail: &QueryTrail<'_, Company, Walked>,
     ) -> FieldResult<Vec<Company>> {
         Ok(self.companies.try_unwrap()?.clone().sorted())
+    }
+
+    fn field_primary_employment(
+        &self,
+        executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Employment, Walked>,
+    ) -> FieldResult<Option<Employment>> {
+        let employments = self.primary_employments.try_unwrap()?;
+
+        match employments.len() {
+            0 => Ok(None),
+            1 => {
+                let employment = employments[0].clone();
+                Ok(Some(employment))
+            }
+            n => panic!("more than one primary employment: {}", n),
+        }
+    }
+
+    fn field_primary_company(
+        &self,
+        executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Company, Walked>,
+    ) -> FieldResult<Option<Company>> {
+        let companies = self.primary_companies.try_unwrap()?;
+
+        match companies.len() {
+            0 => Ok(None),
+            1 => {
+                let company = companies[0].clone();
+                Ok(Some(company))
+            }
+            n => panic!("more than one primary company: {}", n),
+        }
     }
 }
 
@@ -771,6 +828,7 @@ fn test_loading_has_many_through() {
         id: 5,
         user_id: user.id,
         company_id: tonsser.id,
+        primary: true,
     };
     employments.insert(tonsser_employment.id, tonsser_employment.clone());
 
@@ -778,6 +836,7 @@ fn test_loading_has_many_through() {
         id: 6,
         user_id: user.id,
         company_id: peakon.id,
+        primary: false,
     };
     employments.insert(peakon_employment.id, peakon_employment.clone());
 
@@ -799,6 +858,12 @@ fn test_loading_has_many_through() {
                     company { id name }
                 }
                 companies { id name }
+                primaryEmployment {
+                    id
+                }
+                primaryCompany {
+                    name
+                }
             }
         }
     "#,
@@ -824,15 +889,17 @@ fn test_loading_has_many_through() {
                         { "id": tonsser.id, "name": tonsser.name },
                         { "id": peakon.id, "name": peakon.name },
                     ],
+                    "primaryEmployment": {
+                        "id": tonsser_employment.id,
+                    },
+                    "primaryCompany": {
+                        "name": tonsser.name,
+                    },
                 },
-            ]
+            ],
         }),
         actual: json,
     );
-
-    // assert_eq!(n, counts.user_reads);
-    // assert_eq!(n, counts.country_reads);
-    // assert_eq!(n, counts.city_reads);
 }
 
 struct DbStats {

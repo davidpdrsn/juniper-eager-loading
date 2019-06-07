@@ -5,7 +5,8 @@ authors = ["David Pedersen <david.pdrsn@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-juniper-from-schema = "0.2.1"
+# juniper-from-schema = "^0.2.1"
+juniper-from-schema = { path = "/Users/davidpdrsn/dev/major/juniper-from-schema/juniper-from-schema" }
 juniper-eager-loading-code-gen = { path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]

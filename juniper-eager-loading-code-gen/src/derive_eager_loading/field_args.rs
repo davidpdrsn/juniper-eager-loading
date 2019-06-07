@@ -82,6 +82,8 @@ pub struct HasOneInner {
     model: Option<syn::Path>,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
+    #[darling(default)]
+    graphql_field: Option<syn::Ident>,
 }
 
 #[derive(FromMeta)]
@@ -101,6 +103,10 @@ pub struct HasManyInner {
     model: Option<syn::Path>,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
+    #[darling(default)]
+    predicate_method: Option<syn::Ident>,
+    #[darling(default)]
+    graphql_field: Option<syn::Ident>,
 }
 
 #[derive(FromMeta)]
@@ -116,11 +122,16 @@ pub struct HasManyThroughInner {
     skip: Option<()>,
     #[darling(default)]
     model: Option<syn::Path>,
-    join_model: syn::Path,
+    #[darling(default)]
+    join_model: Option<syn::Path>,
     #[darling(default)]
     model_field: Option<syn::Path>,
     #[darling(default)]
     join_model_field: Option<syn::Path>,
+    #[darling(default)]
+    predicate_method: Option<syn::Ident>,
+    #[darling(default)]
+    graphql_field: Option<syn::Ident>,
 }
 
 pub struct FieldArgs {
@@ -132,6 +143,8 @@ pub struct FieldArgs {
     pub skip: bool,
     pub print: bool,
     root_model_field: Option<syn::Ident>,
+    predicate_method: Option<syn::Ident>,
+    graphql_field: Option<syn::Ident>,
 }
 
 impl FieldArgs {
@@ -162,6 +175,14 @@ impl FieldArgs {
             let field_name = Ident::new(&field_name, Span::call_site());
             quote! { #field_name }
         }
+    }
+
+    pub fn graphql_field(&self) -> &Option<syn::Ident> {
+        &self.graphql_field
+    }
+
+    pub fn predicate_method(&self) -> Option<syn::Ident> {
+        self.predicate_method.clone()
     }
 
     pub fn join_model(&self) -> TokenStream {
@@ -220,12 +241,18 @@ impl From<HasOneInner> for FieldArgs {
             join_model_field: None,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
+            predicate_method: None,
+            graphql_field: inner.graphql_field,
         }
     }
 }
 
 impl From<HasManyInner> for FieldArgs {
     fn from(inner: HasManyInner) -> Self {
+        if inner.root_model_field.is_none() && inner.skip.is_none() {
+            panic!("For the attribute #[has_many(...)] you must provide either `root_model_field` or `skip`. Both were missing");
+        }
+
         Self {
             foreign_key_field: inner.foreign_key_field,
             model: inner.model,
@@ -235,21 +262,29 @@ impl From<HasManyInner> for FieldArgs {
             join_model_field: None,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
+            predicate_method: inner.predicate_method,
+            graphql_field: inner.graphql_field,
         }
     }
 }
 
 impl From<HasManyThroughInner> for FieldArgs {
     fn from(inner: HasManyThroughInner) -> Self {
+        if inner.join_model.is_none() && inner.skip.is_none() {
+            panic!("For the attribute #[has_many_through(...)] you must provide either `join_model` or `skip`. Both were missing");
+        }
+
         Self {
             foreign_key_field: None,
             model: inner.model,
             root_model_field: None,
-            join_model: Some(inner.join_model),
+            join_model: inner.join_model,
             model_field: inner.model_field,
             join_model_field: inner.join_model_field,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
+            predicate_method: inner.predicate_method,
+            graphql_field: inner.graphql_field,
         }
     }
 }
