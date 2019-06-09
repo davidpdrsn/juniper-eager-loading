@@ -256,6 +256,7 @@ impl DeriveData {
                         .iter()
                         .map(|model| model.#foreign_key_field.clone())
                         .collect::<Vec<_>>();
+                    let ids = juniper_eager_loading::unique(ids);
                     Ok(juniper_eager_loading::LoadResult::Ids(ids))
                 }
             }
@@ -377,11 +378,13 @@ impl DeriveData {
                         .filter_map(|id| id .as_ref())
                         .cloned()
                         .collect::<Vec<_>>();
+                    let ids = juniper_eager_loading::unique(ids);
                 }
             }
             AssociationType::HasMany | AssociationType::HasManyThrough => {
                 quote! {
                     let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
+                    let ids = juniper_eager_loading::unique(ids);
                 }
             }
         }
@@ -454,7 +457,7 @@ impl DeriveData {
 
         quote! {
             fn loaded_or_failed_child(node: &mut Self, child: #inner_type) {
-                node.#field_name.loaded_or_failed(child)
+                node.#field_name.loaded(child)
             }
         }
     }

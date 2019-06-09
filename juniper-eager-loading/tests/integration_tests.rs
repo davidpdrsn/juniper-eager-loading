@@ -296,8 +296,8 @@ pub struct User {
     user: models::User,
 
     // #[has_one(
-    //     model = "models::Country",
     //     foreign_key_field = "country_id",
+    //     model = "models::Country",
     //     root_model_field = "country"
     // )]
     #[has_one(default)]

@@ -7,8 +7,6 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 mod derive_eager_loading;
-mod load_from_ids;
-mod load_from_models;
 
 #[proc_macro_derive(
     EagerLoading,
@@ -16,14 +14,4 @@ mod load_from_models;
 )]
 pub fn derive_eager_loading(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_eager_loading::gen_tokens(input)
-}
-
-#[proc_macro_derive(LoadFrom, attributes(load_from_ids))]
-pub fn load_from_ids(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    load_from_ids::gen_tokens(input)
-}
-
-#[proc_macro_derive(LoadFromModels, attributes(load_from_models))]
-pub fn load_from_models(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    load_from_models::gen_tokens(input)
 }
