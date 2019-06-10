@@ -5,8 +5,7 @@ authors = ["David Pedersen <david.pdrsn@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-# juniper-from-schema = "^0.2.1"
-juniper-from-schema = { path = "/Users/davidpdrsn/dev/major/juniper-from-schema/juniper-from-schema" }
+juniper-from-schema = "^0.2"
 juniper-eager-loading-code-gen = { path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]
@@ -14,3 +13,4 @@ juniper = "^0.12"
 assert-json-diff = "1.0.0"
 serde_json = "1.0.39"
 backtrace = "0.3.26"
+diesel = { version = "^1", features = ["postgres"] }

@@ -456,7 +456,7 @@ impl DeriveData {
         let inner_type = &data.inner_type;
 
         quote! {
-            fn loaded_or_failed_child(node: &mut Self, child: #inner_type) {
+            fn loaded_child(node: &mut Self, child: #inner_type) {
                 node.#field_name.loaded(child)
             }
         }

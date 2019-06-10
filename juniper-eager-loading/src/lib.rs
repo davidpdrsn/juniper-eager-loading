@@ -1,10 +1,31 @@
 //! juniper-eager-loading is a library for avoiding N+1 query bugs designed to work with
 //! [Juniper][] and [juniper-from-schema][].
 //!
+//! <center>🚨 **This library is still experimental and everything is subject to change** 🚨</center>
+//!
 //! It is designed to make the most common assocation setups easy to handle and while being
 //! flexible and allowing you to customize things as needed. It is also 100% data store agnostic.
 //! So regardless if your API is backed by an SQL database or another API you can still use this
 //! library.
+//!
+//! If you're familiar with N+1 queries in GraphQL and eager loading, feel free to skip forward to
+//! ["A real example"](#a-real-example).
+//!
+//! *NOTE*: Since this library requires [juniper-from-schema][] it is best if you're first familiar
+//! with that.
+//!
+//! # Table of contents
+//!
+//! - [What is N+1 query bugs?](#what-is-n1-query-bugs)
+//!     - [N+1s in GraphQL](#n1s-in-graphql)
+//! - [How this library works at a high level](#how-this-library-works-at-a-high-level)
+//! - [A real example](#a-real-example)
+//! - [`#[derive(EagerLoading)]`](#deriveeagerloading)
+//!     - [Attributes](#attributes)
+//! - [Associations](#associations)
+//!     - [Attributes supported on all associations](#attributes-supported-on-all-associations)
+//! - [Diesel helper](#diesel-helper)
+//! - [When your GraphQL schema doesn't match your database schema](#when-your-graphql-schema-doesnt-match-your-database-schema)
 //!
 //! # What is N+1 query bugs?
 //!
@@ -59,7 +80,7 @@
 //! your app since you're doing many more database calls than necessary.
 //!
 //! One possible solution to this is called "eager loading". The idea is to load all countries up
-//! front, before looping over the users. So instead of N+1 queries you get 2:
+//! front, before looping over the users. So instead of doing N+1 queries you do 2:
 //!
 //! ```sql
 //! select * from users
@@ -68,7 +89,7 @@
 //!
 //! Since you're loading the countries up front, this strategy is called "eager loading".
 //!
-//! # N+1s in GraphQL
+//! ## N+1s in GraphQL
 //!
 //! If you're not careful when implementing a GraphQL API you'll have lots of these N+1 query bugs.
 //! Whenever a field returns a list of types and those types perform queries in their resolvers,
@@ -80,7 +101,7 @@
 //! However in GraphQL the responses are not fixed. They depend on the incoming queries, which are
 //! not known ahead of time. So setting up the correct amount of eager loading requires inspecting
 //! the queries before executing them and eager loading the types requested such that the actual
-//! resolvers wont need to run queries.
+//! resolvers wont need to run queries. That is exactly what this library does.
 //!
 //! # How this library works at a high level
 //!
@@ -93,7 +114,7 @@
 //! }
 //! ```
 //!
-//! You might create the corresponding Rust model object like this:
+//! You might create the corresponding Rust model type like this:
 //!
 //! ```
 //! struct User {
@@ -103,12 +124,14 @@
 //! ```
 //!
 //! However this approach has one big issue. How are you going to resolve the field `User.country`
-//! without doing database queries? All the resolver has access to is a `User` with a `country_id`
+//! without doing a database query? All the resolver has access to is a `User` with a `country_id`
 //! field. It can't get the country without loading it from the database...
 //!
-//! Fundamentally these kinds of model structs don't work well for eager loading with GraphQL. So
-//! this library takes a different approach. What if we created separate structs for the database
-//! models and the GraphQL models? Something like this:
+//! Fundamentally these kinds of model structs don't work for eager loading with GraphQL. So
+//! this library takes a different approach.
+//!
+//! What if we created separate structs for the database models and the GraphQL models? Something
+//! like this:
 //!
 //! ```
 //! # fn main() {}
@@ -124,38 +147,31 @@
 //!     }
 //! }
 //!
-//! mod graphql {
-//!     use super::models;
+//! struct User {
+//!     user: models::User,
+//!     country: HasOne<Country>,
+//! }
 //!
-//!     struct User {
-//!         user: models::User,
-//!         country: HasOne<Country>,
-//!     }
+//! struct Country {
+//!     country: models::Country
+//! }
 //!
-//!     struct Country {
-//!         country: models::Country
-//!     }
-//!
-//!     enum HasOne<T> {
-//!         Loaded(T),
-//!         NotLoaded,
-//!     }
+//! enum HasOne<T> {
+//!     Loaded(T),
+//!     NotLoaded,
 //! }
 //! ```
 //!
-//! Now we're able to resolve the query with code like so:
+//! Now we're able to resolve the query with code like this:
 //!
 //! 1. Load all the users (first query).
 //! 2. Map the users to a list of country ids.
 //! 3. Load all the countries with those ids (second query).
-//! 4. Zip the users with the country with the correct id, so change `User.country` from
+//! 4. Pair up the users with the country with the correct id, so change `User.country` from
 //!    `HasOne::NotLoaded` to `HasOne::Loaded(matching_country)`.
 //! 5. When resolving the GraphQL field `User.country` simply return the loaded country.
 //!
 //! # A real example
-//!
-//! Since this library requires [juniper-from-schema][] it is best if you're first familiar with
-//! that.
 //!
 //! ```
 //! use juniper::{Executor, FieldResult};
@@ -246,7 +262,7 @@
 //!
 //!     // Setup a "has one" association between a user and a country.
 //!     // `default` will use all the default attribute values.
-//!     // Exacty that they are is explained below.
+//!     // Exacty what they are is explained below.
 //!     #[has_one(default)]
 //!     country: HasOne<Country>,
 //! }
@@ -320,17 +336,23 @@
 //!
 //! For a type to support eager loading it needs to implement the following traits:
 //!
-//! - `GraphqlNodeForModel`
-//! - `EagerLoadAllChildren`
-//! - Each association field must implement `EagerLoadChildrenOfType`
+//! - [`GraphqlNodeForModel`][]
+//! - [`EagerLoadAllChildren`][]
+//! - Each association field must implement [`EagerLoadChildrenOfType`][]
+//!
+//! [`GraphqlNodeForModel`]: trait.GraphqlNodeForModel.html
+//! [`EagerLoadAllChildren`]: trait.EagerLoadAllChildren.html
 //!
 //! Implementing these traits involves lots of boilerplate, therefore you should use
 //! `#[derive(EagerLoading)]` to derive implementations as much as possible.
 //!
 //! Sometimes you might need customized eager loading for a specific association, in that case you
 //! should still have `#[derive(EagerLoading)]` on your struct but implement
-//! `EagerLoadChildrenOfType` yourself for the field that requires a custom setup. An example of
-//! how to do that can be found [here](TODO).
+//! [`EagerLoadChildrenOfType`][] yourself for the field that requires a custom setup. An example
+//! of how to do that can be found
+//! [here](trait.EagerLoadChildrenOfType.html#manual-implementation).
+//!
+//! [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 //!
 //! ## Attributes
 //!
@@ -360,36 +382,57 @@
 //! - [`HasManyThrough`](struct.HasManyThrough.html)
 //!
 //! For each field of your GraphQL struct that is one of these four types the trait
-//! `EagerLoadChildrenOfType` will be implemented by `#[derive(EagerLoading)]`.
+//! [`EagerLoadChildrenOfType`][] will be implemented by `#[derive(EagerLoading)]`.
 //!
 //! ## Attributes supported on all associations
 //!
-//! Theser are the attributes that are supported on all associations. None of these attributes take
+//! These are the attributes that are supported on all associations. None of these attributes take
 //! arguments.
-//!
-//! ### `default`
-//!
-//! Use the default values for all attributes not provided. For example `#[has_one(default)]`.
 //!
 //! ### `skip`
 //!
-//! Skip implementing `EagerLoadChildrenOfType` for the field. This is useful if you need to
+//! Skip implementing [`EagerLoadChildrenOfType`][] for the field. This is useful if you need to
 //! provide a custom implementation.
 //!
 //! ### `print`
 //!
-//! This will cause the implementation of `EagerLoadChildrenOfType` for the field to be printed
+//! This will cause the implementation of [`EagerLoadChildrenOfType`][] for the field to be printed
 //! while compiling. This is useful when combined with `skip`. It will print a good starting place
 //! for you to customize.
 //!
 //! The resulting code wont be formatted. We recommend you do that with
 //! [rustfmt](https://github.com/rust-lang/rustfmt).
 //!
+//! # Diesel helper
+//!
+//! Implementing [`LoadFrom`][] for lots of model types might involve lots of boilerplate. If you're
+//! using [Diesel][] you can use the [`impl_LoadFrom_for_diesel`] macro to hide all of that
+//! boilerplate.
+//!
+//! [`LoadFrom`]: trait.LoadFrom.html
+//! [`impl_LoadFrom_for_diesel`]: macro.impl_LoadFrom_for_diesel.html
+//! [Diesel]: https://diesel.rs
+//! [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
+//!
+//! # When your GraphQL schema doesn't match your database schema
+//!
+//! This library supports eager loading most kinds of association setups, however it probably
+//! doesn't support all that might exist in your app. It also works best when your database schema
+//! closely matches your GraphQL schema.
+//!
+//! If you find yourself having to implement something that isn't directly supported remember that
+//! you're still free to implement you resolver functions exactly as you want. So if doing queries
+//! in a resolver is the only way to get the behaviour you need then so be it. Avoiding some N+1
+//! queries is better than avoiding none.
+//!
+//! However if you have a setup that you think this library should support please don't hestitate
+//! to [open an issue](https://github.com/davidpdrsn/juniper-eager-loading).
+//!
 //! [Juniper]: https://github.com/graphql-rust/juniper
 //! [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
 #![deny(
-    // missing_docs,
+    missing_docs,
     dead_code,
     missing_copy_implementations,
     missing_debug_implementations,
@@ -401,8 +444,10 @@
     unused_imports,
     unused_must_use,
     unused_qualifications,
-    unused_variables,
+    unused_variables
 )]
+
+mod macros;
 
 use juniper_from_schema::Walked;
 use std::{fmt, hash::Hash};
@@ -416,11 +461,20 @@ pub mod prelude {
     pub use super::GraphqlNodeForModel;
 }
 
+/// The types of associations.
+///
+/// This is used for [`Error`] to report which kind of association encountered an error.
+///
+/// [`Error`]: enum.Error.html
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum AssociationType {
+    /// There was an error with a [`HasOne`](struct.HasOne.html).
     HasOne,
+    /// There was an error with an [`OptionHasOne`](struct.OptionHasOne.html).
     OptionHasOne,
+    /// There was an error with a [`HasMany`](struct.HasMany.html).
     HasMany,
+    /// There was an error with a [`HasManyThrough`](struct.HasManyThrough.html).
     HasManyThrough,
 }
 
@@ -444,107 +498,7 @@ pub enum AssociationType {
 ///
 /// # Example
 ///
-/// ```
-/// # use juniper::{Executor, FieldResult};
-/// # use juniper_eager_loading::{prelude::*, EagerLoading, HasOne};
-/// # use juniper_from_schema::graphql_schema;
-/// # use std::error::Error;
-/// # graphql_schema! {
-/// #     schema { query: Query }
-/// #     type Query { noop: Boolean! @juniper(ownership: "owned") }
-/// #     type User {
-/// #         id: Int!
-/// #         country: Country!
-/// #     }
-/// #     type Country {
-/// #         id: Int!
-/// #     }
-/// # }
-/// # pub struct Query;
-/// # impl QueryFields for Query {
-/// #     fn field_noop(
-/// #         &self,
-/// #         executor: &Executor<'_, Context>,
-/// #     ) -> FieldResult<bool> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// # impl juniper_eager_loading::LoadFrom<i32> for models::Country {
-/// #     type Error = Box<dyn std::error::Error>;
-/// #     type Connection = DbConnection;
-/// #     fn load(
-/// #         employments: &[i32],
-/// #         db: &Self::Connection,
-/// #     ) -> Result<Vec<Self>, Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// # pub struct DbConnection;
-/// # impl DbConnection {
-/// #     fn load_all_users(&self) -> Vec<models::User> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// # pub struct Context { db: DbConnection }
-/// # impl juniper::Context for Context {}
-/// # impl UserFields for User {
-/// #     fn field_id(
-/// #         &self,
-/// #         executor: &Executor<'_, Context>,
-/// #     ) -> FieldResult<&i32> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn field_country(
-/// #         &self,
-/// #         executor: &Executor<'_, Context>,
-/// #         trail: &QueryTrail<'_, Country, Walked>,
-/// #     ) -> FieldResult<&Country> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// # impl CountryFields for Country {
-/// #     fn field_id(
-/// #         &self,
-/// #         executor: &Executor<'_, Context>,
-/// #     ) -> FieldResult<&i32> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// # mod models {
-/// #     #[derive(Clone)]
-/// #     pub struct User {
-/// #         pub id: i32,
-/// #         pub country_id: i32
-/// #     }
-/// #     #[derive(Clone)]
-/// #     pub struct Country {
-/// #         pub id: i32,
-/// #     }
-/// # }
-/// #
-/// # fn main() {}
-/// #
-/// #[derive(Clone, EagerLoading)]
-/// #[eager_loading(connection = "DbConnection", error = "Box<dyn std::error::Error>")]
-/// pub struct User {
-///     user: models::User,
-///
-///     // these are the defaults. `#[has_one(default)]` would also work here.
-///     #[has_one(
-///         foreign_key_field = "country_id",
-///         model = "models::Country",
-///         root_model_field = "country",
-///         graphql_field = "country",
-///     )]
-///     country: HasOne<Country>,
-/// }
-///
-/// #[derive(Clone, EagerLoading)]
-/// #[eager_loading(connection = "DbConnection", error = "Box<dyn std::error::Error>")]
-/// pub struct Country {
-///     country: models::Country,
-/// }
-/// ```
+/// You can find a complete example of `HasOne` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/has_one.rs).
 ///
 /// # Attributes
 ///
@@ -552,11 +506,12 @@ pub enum AssociationType {
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of field}_id` | `foreign_key_field = "country_id"` |
 /// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Country"` |
-/// | `root_model_field` | The name of the field on the associated GraphQL type that hold the database model | `{name of field}` | `root_model_field = "country"` |
+/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | `{name of field}` | `root_model_field = "country"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
+/// | `default` | Use the default value for all unspecified attributes | N/A | `default` |
 ///
-/// Additionally it also supports the attributes `default`, `print`, and `skip`. See the [root
-/// model docs](/#attributes-supported-on-all-associations) for more into on those.
+/// Additionally it also supports the attributes `print`, and `skip`. See the [root model
+/// docs](/#attributes-supported-on-all-associations) for more into on those.
 ///
 /// # Errors
 ///
@@ -632,6 +587,27 @@ impl<T> HasOneInner<T> {
     }
 }
 
+/// An optional "has-one association".
+///
+/// It works exactly like [`HasOne`] except it doesn't error if the association doesn't get loaded.
+/// The value doesn't get loaded it defaults to `None`.
+///
+/// # Example
+///
+/// You can find a complete example of `OptionHasMany` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/option_has_many.rs).
+///
+/// # Attributes
+///
+/// It supports the same attributes as [`HasOne`].
+///
+/// [`HasOne`]: struct.HasOne.html
+///
+/// # Errors
+///
+/// [`try_unwrap`][] will never error. If the association wasn't loaded or wasn't found it will
+/// return `Ok(None)`.
+///
+/// [`try_unwrap`]: struct.OptionHasOne.html#method.try_unwrap
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct OptionHasOne<T>(Option<T>);
 
@@ -642,14 +618,18 @@ impl<T> Default for OptionHasOne<T> {
 }
 
 impl<T> OptionHasOne<T> {
+    /// Borrow the loaded value. If the value has not been loaded it will return `Ok(None)`. It
+    /// will not error.
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         Ok(&self.0)
     }
 
+    /// Set the given value as the loaded value.
     pub fn loaded(&mut self, inner: T) {
         std::mem::replace(self, OptionHasOne(Some(inner)));
     }
 
+    /// Check that a loaded value is present otherwise set `self` to `None`.
     pub fn assert_loaded_otherwise_failed(&mut self) {
         match self.0 {
             Some(_) => {}
@@ -660,6 +640,46 @@ impl<T> OptionHasOne<T> {
     }
 }
 
+/// A "has many" association.
+///
+/// Imagine you have these models:
+///
+/// ```
+/// struct User {
+///     id: i32,
+/// }
+///
+/// struct Car {
+///     id: i32,
+///     user_id: i32,
+/// }
+/// ```
+///
+/// For this setup we say "user has many cars" and "cars have one user". This is the inverse of a
+/// `HasOne` assocation because the foreign key is on `Car` instead of `User`.
+///
+/// This means users can own many cars, but cars can only be owned by one user.
+///
+/// # Example
+///
+/// You can find a complete example of `HasMany` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/has_many.rs).
+///
+/// # Attributes
+///
+/// | Name | Description | Default | Example |
+/// |---|---|---|---|
+/// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = "user_id"` |
+/// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Car"` |
+/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
+/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
+/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
+///
+/// # Errors
+///
+/// [`try_unwrap`][] will never error. If the association wasn't loaded or wasn't found it will
+/// return `Ok(vec![])`.
+///
+/// [`try_unwrap`]: struct.HasMany.html#method.try_unwrap
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct HasMany<T>(Vec<T>);
 
@@ -670,17 +690,72 @@ impl<T> Default for HasMany<T> {
 }
 
 impl<T> HasMany<T> {
+    /// Borrow the loaded values. If no values have been loaded it will return an empty list.
+    /// It will not return an error.
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
 
+    /// Add the loaded value to the list.
     pub fn loaded(&mut self, inner: T) {
         self.0.push(inner);
     }
 
+    /// This function doesn't do anything since the default is an empty list and there is no error
+    /// state.
     pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
+/// A "has many through" association.
+///
+/// Imagine you have these models:
+///
+/// ```
+/// struct User {
+///     id: i32,
+/// }
+///
+/// struct Company {
+///     id: i32,
+/// }
+///
+/// struct Employments {
+///     id: i32,
+///     user_id: i32,
+///     company_id: i32,
+/// }
+/// ```
+///
+/// For this setup we say "user has many companies through employments". This means uses can work
+/// at many companies and companies can have many employees, provided that we join with `Employment`.
+///
+/// This requires that we use [the `JoinModel`](trait.EagerLoadChildrenOfType.html#joinmodel) type
+/// on [`EagerLoadChildrenOfType`][] and is therefore a bit different from the other associations
+/// since it involves a third type.
+///
+/// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
+///
+/// # Example
+///
+/// You can find a complete example of `HasManyThrough` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/has_many_through.rs).
+///
+/// # Attributes
+///
+/// | Name | Description | Default | Example |
+/// |---|---|---|---|
+/// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Car"` |
+/// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = "company"` |
+/// | `join_model` | The model we have to join with | N/A | `join_model = "models::Employment"` |
+/// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = "employment"` |
+/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
+/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
+///
+/// # Errors
+///
+/// [`try_unwrap`][] will never error. If the association wasn't loaded or wasn't found it will
+/// return `Ok(vec![])`.
+///
+/// [`try_unwrap`]: struct.HasManyThrough.html#method.try_unwrap
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct HasManyThrough<T>(Vec<T>);
 
@@ -691,35 +766,292 @@ impl<T> Default for HasManyThrough<T> {
 }
 
 impl<T> HasManyThrough<T> {
+    /// Borrow the loaded values. If no values have been loaded it will return an empty list.
+    /// It will not return an error.
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
 
+    /// Add the loaded value to the list.
     pub fn loaded(&mut self, inner: T) {
         self.0.push(inner);
     }
 
+    /// This function doesn't do anything since the default is an empty list and there is no error
+    /// state.
     pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
+/// A GraphQL type backed by a model object.
+///
+/// You shouldn't need to implement this trait yourself even when customizing eager loading.
 pub trait GraphqlNodeForModel: Sized {
+    /// The model type.
     type Model;
+
+    /// The id type the model uses.
     type Id: 'static + Hash + Eq;
+
+    /// The connection type required to do the loading. This can be a database connection or maybe
+    /// a connection an external web service.
     type Connection;
+
+    /// The error type.
     type Error;
 
+    /// Create a new GraphQL type from a model.
     fn new_from_model(model: &Self::Model) -> Self;
 
+    /// Create a list of GraphQL types from a list of models.
     fn from_db_models(models: &[Self::Model]) -> Vec<Self> {
         models
             .iter()
             .map(|model| Self::new_from_model(model))
-            .collect::<Vec<_>>()
+            .collect()
     }
 }
 
+/// Trait used for generic constraint on [`QueryTrail`](https://docs.rs/juniper-from-schema/#query-trails)s
+///
+/// This crate cannot depend directly on `QueryTrail` because they're generated by
+/// [`graphql_schema_from_file`](https://docs.rs/juniper-from-schema/#reexports) and not exported
+/// by "juniper-from-schema".
 pub trait GenericQueryTrail<T, K> {}
 
+/// Perform eager loading for a single association of a GraphQL struct.
+///
+/// `#[derive(EagerLoading)]` will implement this trait for each [association field][] your GraphQL
+/// struct has.
+///
+/// [association field]: /#associations
+///
+/// # Manual implementation
+///
+/// Sometimes you might have a setup that `#[derive(EagerLoading)]` doesn't support. In those cases
+/// you have to implement this trait yourself for those struct fields. Here is an example of how to
+/// do that:
+///
+/// ```
+/// # use juniper::{Executor, FieldResult};
+/// # use juniper_eager_loading::{prelude::*, *};
+/// # use juniper_from_schema::graphql_schema;
+/// # use std::error::Error;
+/// # pub struct Query;
+/// # impl QueryFields for Query {
+/// #     fn field_noop(&self, executor: &Executor<'_, Context>) -> FieldResult<bool> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// # impl juniper_eager_loading::LoadFrom<i32> for models::Country {
+/// #     type Error = Box<dyn std::error::Error>;
+/// #     type Connection = DbConnection;
+/// #     fn load(employments: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// # pub struct DbConnection;
+/// # impl DbConnection {
+/// #     fn load_all_users(&self) -> Vec<models::User> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// # pub struct Context {
+/// #     db: DbConnection,
+/// # }
+/// # impl juniper::Context for Context {}
+/// # impl UserFields for User {
+/// #     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn field_country(
+/// #         &self,
+/// #         executor: &Executor<'_, Context>,
+/// #         trail: &QueryTrail<'_, Country, Walked>,
+/// #     ) -> FieldResult<&Option<Country>> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// # impl CountryFields for Country {
+/// #     fn field_id(&self, executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// # fn main() {}
+/// #
+/// # graphql_schema! {
+/// #     schema { query: Query }
+/// #     type Query { noop: Boolean! @juniper(ownership: "owned") }
+/// #     type User {
+/// #         id: Int!
+/// #         country: Country
+/// #     }
+/// #     type Country {
+/// #         id: Int!
+/// #     }
+/// # }
+/// # mod models {
+/// #     #[derive(Clone)]
+/// #     pub struct User {
+/// #         pub id: i32,
+/// #         pub country_id: Option<i32>,
+/// #     }
+/// #     #[derive(Clone)]
+/// #     pub struct Country {
+/// #         pub id: i32,
+/// #     }
+/// # }
+/// #
+/// #[derive(Clone, EagerLoading)]
+/// #[eager_loading(connection = "DbConnection", error = "Box<dyn std::error::Error>")]
+/// pub struct User {
+///     user: models::User,
+///
+///     // Add `#[option_has_one(default, print)]` to get a good starting point for your
+///     // manual implementaion.
+///     #[option_has_one(skip)]
+///     country: OptionHasOne<Country>,
+/// }
+///
+/// #[derive(Clone, EagerLoading)]
+/// #[eager_loading(connection = "DbConnection", error = "Box<dyn std::error::Error>")]
+/// pub struct Country {
+///     country: models::Country,
+/// }
+///
+/// #[allow(missing_docs, dead_code)]
+/// struct EagerLoadingContextUserForCountry;
+///
+/// impl<'a>
+///     EagerLoadChildrenOfType<
+///         Country,
+///         QueryTrail<'a, Country, juniper_from_schema::Walked>,
+///         EagerLoadingContextUserForCountry,
+///         (),
+///     > for User
+/// {
+///     type ChildModel = models::Country;
+///     type ChildId = Option<Self::Id>;
+///
+///     fn child_ids(
+///         models: &[Self::Model],
+///         db: &Self::Connection,
+///     ) -> Result<
+///         juniper_eager_loading::LoadResult<Self::ChildId, (Self::ChildModel, ())>,
+///         Self::Error
+///     >
+///     {
+///         let ids = models
+///             .iter()
+///             .map(|model| model.country_id.clone())
+///             .collect::<Vec<_>>();
+///         let ids = juniper_eager_loading::unique(ids);
+///         Ok(juniper_eager_loading::LoadResult::Ids(ids))
+///     }
+///
+///     fn load_children(
+///         ids: &[Self::ChildId],
+///         db: &Self::Connection,
+///     ) -> Result<Vec<Self::ChildModel>, Self::Error> {
+///         let ids = ids
+///             .into_iter()
+///             .filter_map(|id| id.as_ref())
+///             .cloned()
+///             .collect::<Vec<_>>();
+///         let ids = juniper_eager_loading::unique(ids);
+///         <Self::ChildModel as juniper_eager_loading::LoadFrom<Self::Id>>::load(&ids, db)
+///     }
+///
+///     fn is_child_of(node: &Self, child: &(Country, &())) -> bool {
+///         node.user.country_id == Some((child.0).country.id)
+///     }
+///
+///     fn loaded_child(node: &mut Self, child: Country) {
+///         node.country.loaded(child)
+///     }
+///
+///     fn assert_loaded_otherwise_failed(node: &mut Self) {
+///         node.country.assert_loaded_otherwise_failed();
+///     }
+/// }
+/// ```
+///
+/// # Generic parameters
+///
+/// The number of generic parameters to this trait might look scary, but in the vast majority of
+/// cases you shouldn't have to worry about them.
+///
+/// ## `Child`
+///
+/// If model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
+/// this type will default to `models::Country`.
+///
+/// ## `QueryTrailT`
+///
+/// Since [we cannot depend directly](trait.GenericQueryTrail.html) on [`QueryTrail`][] we have to
+/// depend on this generic version instead.
+///
+/// The generic constraint enforces that [`.walk()`][] must to have been called on the `QueryTrail` to
+/// ensure the field we're trying to eager load is actually part of the incoming GraphQL query.
+/// Otherwise the field will not be eager loaded. This is how the compiler can guarantee that we
+/// don't eager load too much.
+///
+/// [`QueryTrail`]: https://docs.rs/juniper-from-schema/#query-trails
+/// [`.walk()`]: https://docs.rs/juniper-from-schema/#k
+///
+/// ## `Context`
+///
+/// This "context" type is needed in case your GraphQL type has multiple assocations to values
+/// of the same type. Could for example be something like this
+///
+/// ```ignore
+/// struct User {
+///     home_country: HasOne<Country>,
+///     current_country: HasOne<Country>,
+/// }
+/// ```
+///
+/// If we didn't have this we wouldn't be able to implement `EagerLoadChildrenOfType<Country>`
+/// twice for `User`, because you cannot implement the same trait twice for the same type.
+///
+/// ## `JoinModel`
+///
+/// This type defaults to `()` and is only need for [`HasManyThrough`][]. In the other associations
+/// there are only two types involved (such as `models::User` and `models::Country`) and one of
+/// them will have a foreign key pointing to the other one. But consider this scenario instead
+/// where users can work for many companies, and companies can have many employees:
+///
+/// ```
+/// mod models {
+///     struct User {
+///         id: i32,
+///     }
+///
+///     struct Company {
+///         id: i32,
+///     }
+///
+///     struct Employment {
+///         id: i32,
+///         user_id: i32,
+///         company_id: i32,
+///     }
+/// }
+/// ```
+///
+/// Imagine now we need to eager load the list of companies a given user works at. That means
+/// [`LoadFrom`][] would return `Vec<models::Company>`. However that isn't enough information once
+/// we need to pair users up with the correct companies. `User` doesn't have `company_id` and
+/// `Company` doesn't have `user_id`.
+///
+/// Instead we need [`LoadFrom`] to return `Vec<(models::Company, models::Employment)>`. We say
+/// "users have many companies through employments", because `models::Employment` is necessary for
+/// pairing things up at the end of [`EagerLoadChildrenOfType`][].
+///
+/// In this case `JoinModel` would be `models::Employment`.
+///
+/// [`HasManyThrough`]: struct.HasManyThrough.html
+/// [`LoadFrom`]: trait.LoadFrom.html
+/// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 pub trait EagerLoadChildrenOfType<Child, QueryTrailT, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
@@ -733,25 +1065,38 @@ where
     QueryTrailT: GenericQueryTrail<Child, Walked>,
     JoinModel: 'static + Clone + ?Sized,
 {
+    /// The model type backing your GraphQL type.
     type ChildModel: Clone;
+
+    /// The id type the child uses. This will be different for the different [association types][].
+    ///
+    /// [association types]: /#associations
     type ChildId: Hash + Eq;
 
+    /// Given a list of models, load either the list of child ids or child models associated.
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
     ) -> Result<LoadResult<Self::ChildId, (Self::ChildModel, JoinModel)>, Self::Error>;
 
+    /// Load a list of children from a list of ids.
     fn load_children(
         ids: &[Self::ChildId],
         db: &Self::Connection,
     ) -> Result<Vec<Self::ChildModel>, Self::Error>;
 
-    fn is_child_of(node: &Self, child: &(Child, &JoinModel)) -> bool;
+    /// Does this parent and this child belong together?
+    fn is_child_of(parent: &Self, child: &(Child, &JoinModel)) -> bool;
 
-    fn loaded_or_failed_child(node: &mut Self, child: Child);
+    /// Store the loaded child on the association.
+    fn loaded_child(node: &mut Self, child: Child);
 
+    /// The association should have been loaded by now, if not store an error inside the
+    /// association (if applicable for the particular association).
     fn assert_loaded_otherwise_failed(node: &mut Self);
 
+    /// Combine all the methods above to eager load the children for a list of GraphQL values and
+    /// models.
     fn eager_load_children(
         nodes: &mut [Self],
         models: &[Self::Model],
@@ -822,7 +1167,7 @@ where
                 .collect::<Vec<_>>();
 
             for child in matching_children {
-                Self::loaded_or_failed_child(node, child.0);
+                Self::loaded_child(node, child.0);
             }
 
             Self::assert_loaded_otherwise_failed(node);
@@ -838,16 +1183,43 @@ fn same_type<A: 'static, B: 'static>() -> bool {
     TypeId::of::<A>() == TypeId::of::<B>()
 }
 
+/// The result of loading child ids.
+///
+/// [`HasOne`][] and [`OptionHasOne`][] can return the child ids because the model has the foreign
+/// key. However for [`HasMany`][] and [`HasManyThrough`][] the model itself doesn't have the
+/// foreign key, the join models do. So we have the return those instead.
+///
+/// Unless you're customizing [`EagerLoadChildrenOfType`] you shouldn't have to worry about this.
+///
+/// [`HasOne`]: struct.HasOne.html
+/// [`OptionHasOne`]: struct.OptionHasOne.html
+/// [`HasMany`]: struct.HasMany.html
+/// [`HasManyThrough`]: struct.HasManyThrough.html
+/// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 #[derive(Debug)]
 pub enum LoadResult<A, B> {
+    /// Ids where loaded.
     Ids(Vec<A>),
+
+    /// Models were loaded.
     Models(Vec<B>),
 }
 
+/// The main entry point trait for doing eager loading.
+///
+/// You shouldn't need to implement this trait yourself even when customizing eager loading.
 pub trait EagerLoadAllChildren<QueryTrailT>
 where
     Self: GraphqlNodeForModel,
 {
+    /// For each field in your GraphQL type that implements [`EagerLoadChildrenOfType`][] call
+    /// [`eager_load_children`][] to do eager loading of that field.
+    ///
+    /// This is the function you should call for eager loading values for a GraphQL field that returns
+    /// a list.
+    ///
+    /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
+    /// [`eager_load_children`]: trait.EagerLoadChildrenOfType.html#method.eager_load_children
     fn eager_load_all_children_for_each(
         nodes: &mut [Self],
         models: &[Self::Model],
@@ -855,6 +1227,9 @@ where
         trail: &QueryTrailT,
     ) -> Result<(), Self::Error>;
 
+    /// Perform eager loading for list of GraphQL values.
+    ///
+    /// This is the function you should call for eager loading associations of a single value.
     fn eager_load_all_chilren(
         node: Self,
         models: &[Self::Model],
@@ -880,7 +1255,7 @@ where
 ///
 /// [`HasMany`]: struct.HasMany.html
 /// [`HasManyThrough`]: struct.HasManyThrough.html
-/// [`impl_LoadFrom_for_diesel`]: TODO
+/// [`impl_LoadFrom_for_diesel`]: macro.impl_LoadFrom_for_diesel.html
 pub trait LoadFrom<T>: Sized {
     /// The error type. This must match the error set in `#[eager_loading(error_type = _)]`.
     type Error;

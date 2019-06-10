@@ -97,6 +97,7 @@ pub struct HasManyInner {
     print: Option<()>,
     #[darling(default)]
     skip: Option<()>,
+
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     #[darling(default)]
@@ -120,6 +121,7 @@ pub struct HasManyThroughInner {
     print: Option<()>,
     #[darling(default)]
     skip: Option<()>,
+
     #[darling(default)]
     model: Option<syn::Path>,
     #[darling(default)]
