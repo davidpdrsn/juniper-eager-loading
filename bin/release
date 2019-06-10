@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+cd ./juniper-eager-loading-code-gen
+cargo release --no-dev-version
+
+cd ../juniper-eager-loading
+cargo release --no-dev-version

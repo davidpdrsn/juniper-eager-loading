@@ -1,11 +1,18 @@
 [package]
-name = "juniper-eager-loading"
-version = "0.1.0"
 authors = ["David Pedersen <david.pdrsn@gmail.com>"]
+categories = ["web-programming"]
+description = "Eliminate N+1 query bugs when using Juniper"
+documentation = "https://docs.rs/juniper-eager-loading"
 edition = "2018"
+homepage = "https://github.com/davidpdrsn/juniper-eager-loading"
+keywords = ["web", "graphql", "juniper"]
+license = "MIT"
+name = "juniper-eager-loading"
+readme = "README.md"
+repository = "https://github.com/davidpdrsn/juniper-eager-loading.git"
+version = "0.0.2"
 
 [dependencies]
-juniper-from-schema = "^0.2"
 juniper-eager-loading-code-gen = { path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]

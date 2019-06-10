@@ -431,6 +431,7 @@
 //! [Juniper]: https://github.com/graphql-rust/juniper
 //! [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
+#![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.0.2")]
 #![deny(
     missing_docs,
     dead_code,
