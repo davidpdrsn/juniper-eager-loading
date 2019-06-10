@@ -167,7 +167,7 @@ pub struct User {
         model_field = "company",
         join_model_field = "employment",
         predicate_method = "a_predicate_method",
-        graphql_field = "companies",
+        graphql_field = "companies"
     )]
     companies: HasManyThrough<Company>,
 }

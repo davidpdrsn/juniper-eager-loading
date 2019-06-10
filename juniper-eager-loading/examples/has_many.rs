@@ -111,10 +111,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = DbConnection;
 
-        fn load(
-            employments: &[User],
-            db: &Self::Connection,
-        ) -> Result<Vec<Self>, Self::Error> {
+        fn load(employments: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
         }
     }
