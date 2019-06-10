@@ -595,7 +595,7 @@ impl<T> HasOneInner<T> {
 ///
 /// # Example
 ///
-/// You can find a complete example of `OptionHasMany` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/option_has_many.rs).
+/// You can find a complete example of `OptionHasMany` [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/juniper-eager-loading/examples/option_has_one.rs).
 ///
 /// # Attributes
 ///
