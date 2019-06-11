@@ -13,7 +13,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Changed
 
-N/A
+- Renamed `impl_LoadFrom_for_diesel` to `impl_load_from_for_diesel`.
 
 ### Removed
 

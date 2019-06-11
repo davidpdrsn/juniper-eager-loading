@@ -10,7 +10,7 @@
 ///
 /// use diesel::pg::PgConnection;
 /// use diesel::prelude::*;
-/// use juniper_eager_loading::impl_LoadFrom_for_diesel;
+/// use juniper_eager_loading::impl_load_from_for_diesel;
 /// #
 /// # fn main() {}
 ///
@@ -51,7 +51,7 @@
 ///     company_id: i32,
 /// }
 ///
-/// impl_LoadFrom_for_diesel! {
+/// impl_load_from_for_diesel! {
 ///     (
 ///         error = diesel::result::Error,
 ///         connection = PgConnection,
@@ -113,7 +113,7 @@
 /// # extern crate diesel;
 /// # use diesel::pg::PgConnection;
 /// # use diesel::prelude::*;
-/// # use juniper_eager_loading::impl_LoadFrom_for_diesel;
+/// # use juniper_eager_loading::impl_load_from_for_diesel;
 /// # fn main() {}
 /// # table! {
 /// #     users (id) {
@@ -178,7 +178,7 @@
 /// }
 /// ```
 #[macro_export]
-macro_rules! impl_LoadFrom_for_diesel {
+macro_rules! impl_load_from_for_diesel {
     (
         (
             error = $error:path,
@@ -187,7 +187,7 @@ macro_rules! impl_LoadFrom_for_diesel {
             $($inner:tt)*
         }
     ) => {
-        $crate::__impl_LoadFrom_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner! {
             error = $error,
             connection = $connection,
             $( $inner )*
@@ -197,7 +197,7 @@ macro_rules! impl_LoadFrom_for_diesel {
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __impl_LoadFrom_for_diesel_inner {
+macro_rules! __impl_load_from_for_diesel_inner {
     (
         error = $error:path,
         connection = $connection:path,
@@ -226,7 +226,7 @@ macro_rules! __impl_LoadFrom_for_diesel_inner {
             }
         }
 
-        $crate::__impl_LoadFrom_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner! {
             error = $error,
             connection = $connection,
             $($rest)*
@@ -257,7 +257,7 @@ macro_rules! __impl_LoadFrom_for_diesel_inner {
             }
         }
 
-        $crate::__impl_LoadFrom_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner! {
             error = $error,
             connection = $connection,
             $($rest)*
