@@ -125,7 +125,6 @@ pub struct User {
 
     #[has_many(
         root_model_field = "car",
-        model = "models::Car",
         foreign_key_field = "user_id",
         graphql_field = "cars",
         predicate_method = "a_predicate_method"

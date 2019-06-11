@@ -120,7 +120,6 @@ impl DeriveData {
 
         let inner_type = &data.inner_type;
         let struct_name = self.struct_name();
-        let child_model = self.child_model_impl(&args, &data);
         let join_model_impl = self.join_model_impl(&data);
         let child_id = self.child_id(&data);
         let child_ids_impl = self.child_ids_impl(&data);
@@ -141,7 +140,6 @@ impl DeriveData {
                 #context,
                 #join_model_impl,
             > for #struct_name {
-                type ChildModel = #child_model;
                 type ChildId = #child_id;
 
                 #child_ids_impl
@@ -231,23 +229,11 @@ impl DeriveData {
         }
     }
 
-    fn child_model_impl(&self, args: &FieldArgs, data: &FieldDeriveData) -> TokenStream {
-        let tokens = args.model(&data.inner_type);
-
-        match data.association_type {
-            AssociationType::HasMany
-            | AssociationType::HasOne
-            | AssociationType::OptionHasOne
-            | AssociationType::HasManyThrough => {
-                quote! { #tokens }
-            }
-        }
-    }
-
     fn child_ids_impl(&self, data: &FieldDeriveData) -> TokenStream {
         let foreign_key_field = &data.foreign_key_field;
         let join_model = &data.join_model;
         let model_id_field = data.model_id_field();
+        let inner_type = &data.inner_type;
 
         let child_ids_impl = match data.association_type {
             AssociationType::HasOne | AssociationType::OptionHasOne => {
@@ -274,7 +260,7 @@ impl DeriveData {
 
                 quote! {
                     let child_models = <
-                        Self::ChildModel
+                        <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                         as
                         juniper_eager_loading::LoadFrom<Self::Model>
                     >::load(&models, db)?;
@@ -311,7 +297,7 @@ impl DeriveData {
                     #filter
 
                     let child_models = <
-                        Self::ChildModel
+                        <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                         as
                         juniper_eager_loading::LoadFrom<#join_model>
                     >::load(&join_models, db)?;
@@ -340,7 +326,7 @@ impl DeriveData {
                 models: &[Self::Model],
                 db: &Self::Connection,
             ) -> Result<
-                juniper_eager_loading::LoadResult<Self::ChildId, (Self::ChildModel, #join_model)>,
+                juniper_eager_loading::LoadResult<Self::ChildId, (<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model, #join_model)>,
                 Self::Error,
             > {
                 #child_ids_impl
@@ -350,15 +336,16 @@ impl DeriveData {
 
     fn load_children_impl(&self, data: &FieldDeriveData) -> TokenStream {
         let normalize_ids = self.normalize_ids(data);
+        let inner_type = &data.inner_type;
 
         quote! {
             fn load_children(
                 ids: &[Self::ChildId],
                 db: &Self::Connection,
-            ) -> Result<Vec<Self::ChildModel>, Self::Error> {
+            ) -> Result<Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error> {
                 #normalize_ids
                 <
-                    Self::ChildModel
+                    <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                     as
                     juniper_eager_loading::LoadFrom<Self::Id>
                 >::load(&ids, db)

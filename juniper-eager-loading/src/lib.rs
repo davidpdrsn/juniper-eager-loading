@@ -506,7 +506,6 @@ pub enum AssociationType {
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of field}_id` | `foreign_key_field = "country_id"` |
-/// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Country"` |
 /// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | `{name of field}` | `root_model_field = "country"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
 /// | `default` | Use the default value for all unspecified attributes | N/A | `default` |
@@ -670,7 +669,6 @@ impl<T> OptionHasOne<T> {
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = "user_id"` |
-/// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Car"` |
 /// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
@@ -744,7 +742,6 @@ impl<T> HasMany<T> {
 ///
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
-/// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Car"` |
 /// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = "company"` |
 /// | `join_model` | The model we have to join with | N/A | `join_model = "models::Employment"` |
 /// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = "employment"` |
@@ -788,7 +785,7 @@ impl<T> HasManyThrough<T> {
 /// You shouldn't need to implement this trait yourself even when customizing eager loading.
 pub trait GraphqlNodeForModel: Sized {
     /// The model type.
-    type Model;
+    type Model: Clone;
 
     /// The id type the model uses.
     type Id: 'static + Hash + Eq;
@@ -930,17 +927,18 @@ pub trait GenericQueryTrail<T, K> {}
 ///         (),
 ///     > for User
 /// {
-///     type ChildModel = models::Country;
 ///     type ChildId = Option<Self::Id>;
 ///
 ///     fn child_ids(
 ///         models: &[Self::Model],
 ///         db: &Self::Connection,
 ///     ) -> Result<
-///         juniper_eager_loading::LoadResult<Self::ChildId, (Self::ChildModel, ())>,
-///         Self::Error
-///     >
-///     {
+///         juniper_eager_loading::LoadResult<
+///             Self::ChildId,
+///             (<Country as GraphqlNodeForModel>::Model, ()),
+///         >,
+///         Self::Error,
+///     > {
 ///         let ids = models
 ///             .iter()
 ///             .map(|model| model.country_id.clone())
@@ -952,14 +950,16 @@ pub trait GenericQueryTrail<T, K> {}
 ///     fn load_children(
 ///         ids: &[Self::ChildId],
 ///         db: &Self::Connection,
-///     ) -> Result<Vec<Self::ChildModel>, Self::Error> {
+///     ) -> Result<Vec<<Country as GraphqlNodeForModel>::Model>, Self::Error> {
 ///         let ids = ids
 ///             .into_iter()
 ///             .filter_map(|id| id.as_ref())
 ///             .cloned()
 ///             .collect::<Vec<_>>();
 ///         let ids = juniper_eager_loading::unique(ids);
-///         <Self::ChildModel as juniper_eager_loading::LoadFrom<Self::Id>>::load(&ids, db)
+///         <<Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>>::load(
+///             &ids, db,
+///         )
 ///     }
 ///
 ///     fn is_child_of(node: &Self, child: &(Country, &())) -> bool {
@@ -1056,19 +1056,12 @@ pub trait GenericQueryTrail<T, K> {}
 pub trait EagerLoadChildrenOfType<Child, QueryTrailT, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
-    Child: GraphqlNodeForModel<
-            Model = Self::ChildModel,
-            Connection = Self::Connection,
-            Error = Self::Error,
-            Id = Self::Id,
-        > + EagerLoadAllChildren<QueryTrailT>
+    Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error, Id = Self::Id>
+        + EagerLoadAllChildren<QueryTrailT>
         + Clone,
     QueryTrailT: GenericQueryTrail<Child, Walked>,
     JoinModel: 'static + Clone + ?Sized,
 {
-    /// The model type backing your GraphQL type.
-    type ChildModel: Clone;
-
     /// The id type the child uses. This will be different for the different [association types][].
     ///
     /// [association types]: /#associations
@@ -1078,13 +1071,13 @@ where
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
-    ) -> Result<LoadResult<Self::ChildId, (Self::ChildModel, JoinModel)>, Self::Error>;
+    ) -> Result<LoadResult<Self::ChildId, (Child::Model, JoinModel)>, Self::Error>;
 
     /// Load a list of children from a list of ids.
     fn load_children(
         ids: &[Self::ChildId],
         db: &Self::Connection,
-    ) -> Result<Vec<Self::ChildModel>, Self::Error>;
+    ) -> Result<Vec<Child::Model>, Self::Error>;
 
     /// Does this parent and this child belong together?
     fn is_child_of(parent: &Self, child: &(Child, &JoinModel)) -> bool;

@@ -92,7 +92,6 @@ pub struct User {
     // these are the defaults. `#[has_one(default)]` would also work here.
     #[has_one(
         foreign_key_field = "country_id",
-        model = "models::Country",
         root_model_field = "country",
         graphql_field = "country"
     )]

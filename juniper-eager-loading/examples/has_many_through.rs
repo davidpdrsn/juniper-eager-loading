@@ -163,7 +163,6 @@ pub struct User {
 
     #[has_many_through(
         join_model = "models::Employment",
-        model = "models::Company",
         model_field = "company",
         join_model_field = "employment",
         predicate_method = "a_predicate_method",

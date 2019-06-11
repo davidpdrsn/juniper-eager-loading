@@ -297,14 +297,12 @@ pub struct User {
 
     // #[has_one(
     //     foreign_key_field = "country_id",
-    //     model = "models::Country",
     //     root_model_field = "country"
     // )]
     #[has_one(default)]
     country: HasOne<Country>,
 
     // #[has_one(
-    //     model = "models::City",
     //     foreign_key_field = "city_id",
     //     root_model_field = "city"
     // )]
@@ -315,7 +313,6 @@ pub struct User {
     employments: HasMany<Employment>,
 
     #[has_many_through(
-        // model = "models::Company",
         // model_field = "company",
         // join_model_field = "employment"
         join_model = "models::Employment",
@@ -452,11 +449,7 @@ impl CountryFields for Country {
 )]
 pub struct City {
     city: models::City,
-    #[has_one(
-        foreign_key_field = "country_id",
-        model = "models::Country",
-        root_model_field = "country"
-    )]
+    #[has_one(foreign_key_field = "country_id", root_model_field = "country")]
     country: HasOne<Country>,
 }
 

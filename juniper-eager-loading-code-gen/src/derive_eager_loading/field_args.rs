@@ -79,8 +79,6 @@ pub struct HasOneInner {
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     #[darling(default)]
-    model: Option<syn::Path>,
-    #[darling(default)]
     root_model_field: Option<syn::Ident>,
     #[darling(default)]
     graphql_field: Option<syn::Ident>,
@@ -100,8 +98,6 @@ pub struct HasManyInner {
 
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
-    #[darling(default)]
-    model: Option<syn::Path>,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
     #[darling(default)]
@@ -123,8 +119,6 @@ pub struct HasManyThroughInner {
     skip: Option<()>,
 
     #[darling(default)]
-    model: Option<syn::Path>,
-    #[darling(default)]
     join_model: Option<syn::Path>,
     #[darling(default)]
     model_field: Option<syn::Path>,
@@ -139,7 +133,6 @@ pub struct HasManyThroughInner {
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
     join_model_field: Option<syn::Path>,
-    model: Option<syn::Path>,
     model_field: Option<syn::Path>,
     pub join_model: Option<syn::Path>,
     pub skip: bool,
@@ -150,14 +143,6 @@ pub struct FieldArgs {
 }
 
 impl FieldArgs {
-    pub fn model(&self, inner_type: &syn::Type) -> TokenStream {
-        if let Some(inner) = &self.model {
-            quote! { #inner }
-        } else {
-            quote! { models::#inner_type }
-        }
-    }
-
     pub fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
         if let Some(inner) = &self.foreign_key_field {
             quote! { #inner }
@@ -236,7 +221,6 @@ impl From<HasOneInner> for FieldArgs {
     fn from(inner: HasOneInner) -> Self {
         Self {
             foreign_key_field: inner.foreign_key_field,
-            model: inner.model,
             root_model_field: inner.root_model_field,
             join_model: None,
             model_field: None,
@@ -257,7 +241,6 @@ impl From<HasManyInner> for FieldArgs {
 
         Self {
             foreign_key_field: inner.foreign_key_field,
-            model: inner.model,
             root_model_field: inner.root_model_field,
             join_model: None,
             model_field: None,
@@ -278,7 +261,6 @@ impl From<HasManyThroughInner> for FieldArgs {
 
         Self {
             foreign_key_field: None,
-            model: inner.model,
             root_model_field: None,
             join_model: inner.join_model,
             model_field: inner.model_field,
