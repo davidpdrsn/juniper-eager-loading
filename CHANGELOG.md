@@ -16,7 +16,7 @@ N/A
 
 ### Removed
 
-N/A
+- The associated type `ChildModel` on `EagerLoadChildrenOfType` has been removed because it wasn't necessary.
 
 ### Fixed
 
