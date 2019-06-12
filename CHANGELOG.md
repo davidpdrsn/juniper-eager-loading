@@ -8,7 +8,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-N/A
+* Support for optional foreign keys when using `HasMany` by using the `foreign_key_optional` attiribute.
 
 ### Changed
 
