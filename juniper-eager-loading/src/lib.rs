@@ -670,6 +670,7 @@ impl<T> OptionHasOne<T> {
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = "user_id"` |
+/// | `foreign_key_optional` | The foreign key type is optional | Not set | `foreign_key_optional` |
 /// | `model` | The database model type | `models::{name of contained type}` | `model = "models::Car"` |
 /// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |

@@ -211,6 +211,7 @@ impl DeriveData {
             model_field: args.model_field(&inner_type),
             join_model_field: args.join_model_field(),
             foreign_key_field: args.foreign_key_field(foreign_key_field_default),
+            foreign_key_optional: args.foreign_key_optional,
             field_root_model_field: args.root_model_field(&field_name),
             association_type,
             predicate_method: args.predicate_method(),
@@ -411,9 +412,16 @@ impl DeriveData {
                 }
             }
             AssociationType::HasMany => {
-                quote! {
-                      node.#root_model_field.id ==
-                          (child.0).#field_root_model_field.#foreign_key_field
+                if data.foreign_key_optional {
+                    quote! {
+                        Some(node.#root_model_field.id) ==
+                            (child.0).#field_root_model_field.#foreign_key_field
+                    }
+                } else {
+                    quote! {
+                        node.#root_model_field.id ==
+                            (child.0).#field_root_model_field.#foreign_key_field
+                    }
                 }
             }
             AssociationType::HasManyThrough => {
@@ -665,6 +673,7 @@ fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error
 #[allow(dead_code)]
 struct FieldDeriveData {
     foreign_key_field: TokenStream,
+    foreign_key_optional: bool,
     field_root_model_field: TokenStream,
     root_model_field: TokenStream,
     join_model: TokenStream,

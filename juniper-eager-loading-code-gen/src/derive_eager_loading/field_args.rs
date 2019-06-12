@@ -101,6 +101,8 @@ pub struct HasManyInner {
     #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
     #[darling(default)]
+    foreign_key_optional: Option<()>,
+    #[darling(default)]
     model: Option<syn::Path>,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
@@ -138,6 +140,7 @@ pub struct HasManyThroughInner {
 
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
+    pub foreign_key_optional: bool,
     join_model_field: Option<syn::Path>,
     model: Option<syn::Path>,
     model_field: Option<syn::Path>,
@@ -236,6 +239,7 @@ impl From<HasOneInner> for FieldArgs {
     fn from(inner: HasOneInner) -> Self {
         Self {
             foreign_key_field: inner.foreign_key_field,
+            foreign_key_optional: false,
             model: inner.model,
             root_model_field: inner.root_model_field,
             join_model: None,
@@ -257,6 +261,7 @@ impl From<HasManyInner> for FieldArgs {
 
         Self {
             foreign_key_field: inner.foreign_key_field,
+            foreign_key_optional: inner.foreign_key_optional.is_some(),
             model: inner.model,
             root_model_field: inner.root_model_field,
             join_model: None,
@@ -278,6 +283,7 @@ impl From<HasManyThroughInner> for FieldArgs {
 
         Self {
             foreign_key_field: None,
+            foreign_key_optional: false,
             model: inner.model,
             root_model_field: None,
             join_model: inner.join_model,
