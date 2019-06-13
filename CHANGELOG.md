@@ -8,7 +8,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-* Support for optional foreign keys when using `HasMany` by using the `foreign_key_optional` attiribute.
+N/A
 
 ### Changed
 
@@ -22,6 +22,14 @@ N/A
 
 N/A
 
+## [0.1.1]
+
+### Added
+
+* Support for optional foreign keys when using `HasMany` by using the `foreign_key_optional` attribute.
+
 ## [0.1.0]
 
 Initial release.
+
+[0.1.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.0...0.1.1
