@@ -1,8 +1,18 @@
 #!/bin/bash
 set -e
 
-cd ./juniper-eager-loading-code-gen
-cargo release --no-dev-version
+## Dry run
+cd juniper-eager-loading-code-gen
+cargo release --dry-run --no-dev-version
+cd ..
+cd juniper-eager-loading
+cargo release --dry-run --no-dev-version
 
-cd ../juniper-eager-loading
+cd ..
+
+## For real
+cd juniper-eager-loading-code-gen
+cargo release --no-dev-version
+cd ..
+cd juniper-eager-loading
 cargo release --no-dev-version
