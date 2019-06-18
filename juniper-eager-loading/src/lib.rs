@@ -1232,7 +1232,7 @@ where
     /// Perform eager loading for list of GraphQL values.
     ///
     /// This is the function you should call for eager loading associations of a single value.
-    fn eager_load_all_chilren(
+    fn eager_load_all_children(
         node: Self,
         models: &[Self::Model],
         db: &Self::Connection,
