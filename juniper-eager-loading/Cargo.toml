@@ -13,7 +13,7 @@ repository = "https://github.com/davidpdrsn/juniper-eager-loading.git"
 version = "0.1.2"
 
 [dependencies]
-juniper-from-schema = "^0.2"
+juniper-from-schema = "^0.3"
 juniper-eager-loading-code-gen = { version = "0.1.2", path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]

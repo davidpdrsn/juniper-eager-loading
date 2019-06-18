@@ -8,7 +8,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-N/A
+- Support juniper-from-schema ^0.3.
 
 ### Changed
 
