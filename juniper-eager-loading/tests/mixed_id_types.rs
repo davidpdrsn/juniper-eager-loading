@@ -1,5 +1,5 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
-use juniper::{Executor, FieldResult, ID, EmptyMutation};
+use juniper::{EmptyMutation, Executor, FieldResult, ID};
 use juniper_eager_loading::{
     prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
 };
@@ -110,10 +110,7 @@ impl QueryFields for Query {
 
 // The default values are commented out
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(
-    connection = "Db",
-    error = "Box<dyn std::error::Error>",
-)]
+#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
 pub struct User {
     user: models::User,
 
@@ -171,10 +168,7 @@ fn loading_users_and_associations() {
         },
     );
 
-    let db = Db {
-        users,
-        countries,
-    };
+    let db = Db { users, countries };
 
     let (json, counts) = run_query(
         r#"
@@ -207,7 +201,6 @@ fn loading_users_and_associations() {
     assert_eq!(1, counts.user_reads);
     assert_eq!(1, counts.country_reads);
 }
-
 
 struct DbStats {
     user_reads: usize,
