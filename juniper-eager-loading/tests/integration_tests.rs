@@ -388,7 +388,7 @@ pub struct User {
     #[has_many(
         root_model_field = "issue",
         foreign_key_field = "reviewer_id",
-        foreign_key_optional,
+        foreign_key_optional
     )]
     issues: HasMany<Issue>,
 
@@ -604,9 +604,7 @@ impl EmploymentFields for Employment {
 #[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
 pub struct Issue {
     issue: models::Issue,
-    #[option_has_one(
-        root_model_field = "user"
-    )]
+    #[option_has_one(root_model_field = "user")]
     reviewer: OptionHasOne<User>,
 }
 
