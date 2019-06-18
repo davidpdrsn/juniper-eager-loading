@@ -20,7 +20,7 @@ N/A
 
 ### Fixed
 
-N/A
+* Previously, using mixed ID types between parent and child types would not compile. This now actually works.
 
 ## [0.1.1]
 
