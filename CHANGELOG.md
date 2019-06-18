@@ -20,7 +20,7 @@ N/A
 
 ### Fixed
 
-N/A
+* Fixed spelling mistake in `eager_load_all_children` (from `eager_load_all_chilren`).
 
 ## [0.1.1]
 

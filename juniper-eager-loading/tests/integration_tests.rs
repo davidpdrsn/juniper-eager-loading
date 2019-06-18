@@ -1,5 +1,5 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
-use juniper::{Executor, FieldResult};
+use juniper::{Executor, FieldError, FieldResult};
 use juniper_eager_loading::{
     prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
 };
@@ -15,6 +15,7 @@ graphql_schema! {
     }
 
     type Query {
+      user(id: Int!): User! @juniper(ownership: "owned")
       users: [User!]! @juniper(ownership: "owned")
     }
 
@@ -301,6 +302,20 @@ impl juniper::Context for Context {}
 pub struct Query;
 
 impl QueryFields for Query {
+    fn field_user<'a>(
+        &self,
+        executor: &Executor<'a, Context>,
+        trail: &QueryTrail<'a, User, Walked>,
+        id: i32,
+    ) -> FieldResult<User> {
+        let db = &executor.context().db;
+
+        let user_model = db.users.get(&id).ok_or("User not found")?.clone();
+        let user = User::new_from_model(&user_model);
+        let user = User::eager_load_all_children(user, &[user_model], db, trail)?;
+        Ok(user)
+    }
+
     fn field_users<'a>(
         &self,
         executor: &Executor<'a, Context>,
@@ -611,6 +626,58 @@ impl IssueFields for Issue {
     ) -> FieldResult<&Option<User>> {
         Ok(self.reviewer.try_unwrap()?)
     }
+}
+
+#[test]
+fn loading_user() {
+    let mut countries = StatsHash::new("countries");
+    let cities = StatsHash::new("cities");
+    let mut users = StatsHash::new("users");
+
+    let mut country = models::Country { id: 10 };
+    let country_id = country.id;
+
+    let other_city = models::City { id: 30, country_id };
+
+    countries.insert(country_id, country);
+
+    users.insert(
+        1,
+        models::User {
+            id: 1,
+            country_id,
+            city_id: None,
+        },
+    );
+    users.insert(
+        2,
+        models::User {
+            id: 2,
+            country_id,
+            city_id: None,
+        },
+    );
+
+    let db = Db {
+        users,
+        countries,
+        cities,
+        employments: StatsHash::new("employments"),
+        companies: StatsHash::new("companies"),
+        issues: StatsHash::new("issues"),
+    };
+    let (json, counts) = run_query("query Test { user(id: 1) { id } }", db);
+
+    assert_eq!(1, counts.user_reads);
+    assert_eq!(0, counts.country_reads);
+    assert_eq!(0, counts.city_reads);
+
+    assert_json_include!(
+        expected: json!({
+            "user": { "id": 1 },
+        }),
+        actual: json,
+    );
 }
 
 #[test]
