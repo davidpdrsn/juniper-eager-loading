@@ -20,8 +20,14 @@ N/A
 
 ### Fixed
 
-* Fixed spelling mistake in `eager_load_all_children` (from `eager_load_all_chilren`).
-* Previously, using mixed ID types between parent and child types would not compile. This now actually works.
+N/A
+
+## [0.1.2] - 2019-06-18
+
+### Fixed
+
+* Fixed spelling mistake in `eager_load_all_children` (from `eager_load_all_chilren`). [#11](https://github.com/davidpdrsn/juniper-eager-loading/pull/11<Paste>)
+* Previously, using mixed ID types between parent and child types would not compile. This now actually works. [#10](https://github.com/davidpdrsn/juniper-eager-loading/pull/10)
 
 ## [0.1.1]
 
@@ -33,4 +39,5 @@ N/A
 
 Initial release.
 
+[0.1.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.0...0.1.1
