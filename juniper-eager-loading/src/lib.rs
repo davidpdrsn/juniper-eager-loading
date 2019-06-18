@@ -1061,7 +1061,6 @@ where
             Model = Self::ChildModel,
             Connection = Self::Connection,
             Error = Self::Error,
-            Id = Self::Id,
         > + EagerLoadAllChildren<QueryTrailT>
         + Clone,
     QueryTrailT: GenericQueryTrail<Child, Walked>,

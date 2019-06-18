@@ -351,6 +351,10 @@ impl DeriveData {
 
     fn load_children_impl(&self, data: &FieldDeriveData) -> TokenStream {
         let normalize_ids = self.normalize_ids(data);
+        let inner_type = &data.inner_type;
+        let child_id_type = quote! {
+            <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Id
+        };
 
         quote! {
             fn load_children(
@@ -361,7 +365,7 @@ impl DeriveData {
                 <
                     Self::ChildModel
                     as
-                    juniper_eager_loading::LoadFrom<Self::Id>
+                    juniper_eager_loading::LoadFrom<#child_id_type>
                 >::load(&ids, db)
             }
         }
@@ -443,18 +447,23 @@ impl DeriveData {
     }
 
     fn child_id(&self, data: &FieldDeriveData) -> TokenStream {
+        let inner_type = &data.inner_type;
+        let child_id_type = quote! {
+            <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Id
+        };
+
         match data.association_type {
             AssociationType::HasOne => {
-                quote! { Self::Id }
+                quote! { #child_id_type }
             }
             AssociationType::OptionHasOne => {
-                quote! { Option<Self::Id> }
+                quote! { Option<#child_id_type> }
             }
             AssociationType::HasMany => {
-                quote! { Vec<Self::Id> }
+                quote! { Vec<#child_id_type> }
             }
             AssociationType::HasManyThrough => {
-                quote! { Vec<Self::Id> }
+                quote! { Vec<#child_id_type> }
             }
         }
     }
