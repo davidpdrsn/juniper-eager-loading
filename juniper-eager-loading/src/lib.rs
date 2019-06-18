@@ -1229,7 +1229,7 @@ where
         trail: &QueryTrailT,
     ) -> Result<(), Self::Error>;
 
-    /// Perform eager loading for list of GraphQL values.
+    /// Perform eager loading for a single GraphQL value.
     ///
     /// This is the function you should call for eager loading associations of a single value.
     fn eager_load_all_children(
