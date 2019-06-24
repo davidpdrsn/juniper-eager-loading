@@ -20,6 +20,7 @@ graphql_schema! {
     type User {
         id: Int!
         country: Country!
+        visitedCountries: [Country!]!
     }
 
     type Country {
@@ -37,6 +38,12 @@ mod models {
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Country {
         pub id: i64,
+    }
+
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+    pub struct Visit {
+        pub person_id: i32,
+        pub country_id: i64,
     }
 
     impl juniper_eager_loading::LoadFrom<i32> for User {
@@ -70,11 +77,48 @@ mod models {
             Ok(countries)
         }
     }
+
+    impl juniper_eager_loading::LoadFrom<User> for Visit {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let user_ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
+            let visits = db
+                .visits
+                .iter()
+                .filter(|visit| user_ids.contains(&visit.person_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(visits)
+        }
+    }
+
+    impl juniper_eager_loading::LoadFrom<Visit> for Country {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(visits: &[Visit], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let country_ids = visits
+                .iter()
+                .map(|visit| visit.country_id)
+                .collect::<Vec<_>>();
+            let countries = db
+                .countries
+                .all_values()
+                .into_iter()
+                .filter(|country| country_ids.contains(&country.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(countries)
+        }
+    }
 }
 
 pub struct Db {
     users: StatsHash<i32, models::User>,
     countries: StatsHash<i64, models::Country>,
+    visits: Vec<models::Visit>,
 }
 
 pub struct Context {
@@ -116,6 +160,9 @@ pub struct User {
 
     #[has_one(default)]
     country: HasOne<Country>,
+
+    #[has_many_through(join_model = "models::Visit", foreign_key_field = "person_id")]
+    visited_countries: HasManyThrough<Country>,
 }
 
 impl UserFields for User {
@@ -129,6 +176,14 @@ impl UserFields for User {
         _trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<&Country> {
         Ok(self.country.try_unwrap()?)
+    }
+
+    fn field_visited_countries(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Country, Walked>,
+    ) -> FieldResult<&Vec<Country>> {
+        Ok(self.visited_countries.try_unwrap()?)
     }
 }
 
@@ -168,7 +223,11 @@ fn loading_users_and_associations() {
         },
     );
 
-    let db = Db { users, countries };
+    let db = Db {
+        users,
+        countries,
+        visits: vec![],
+    };
 
     let (json, counts) = run_query(
         r#"
@@ -192,6 +251,66 @@ fn loading_users_and_associations() {
                     "country": {
                         "id": country.id.to_string(),
                     },
+                },
+            ]
+        }),
+        actual: json.clone(),
+    );
+
+    assert_eq!(1, counts.user_reads);
+    assert_eq!(1, counts.country_reads);
+}
+
+#[test]
+fn has_many_through_fkey() {
+    let mut countries = StatsHash::new("countries");
+    let mut users = StatsHash::new("users");
+    let mut visits = vec![];
+
+    let country = models::Country { id: 10 };
+    countries.insert(country.id, country.clone());
+
+    let user = models::User {
+        id: 1,
+        country_id: country.id,
+    };
+    users.insert(1, user.clone());
+
+    visits.push(models::Visit {
+        country_id: country.id,
+        person_id: user.id,
+    });
+
+    let db = Db {
+        users,
+        countries,
+        visits,
+    };
+
+    let (json, counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                visitedCountries {
+                    id
+                }
+            }
+        }
+    "#,
+        db,
+    );
+
+    assert_json_include!(
+        expected: json!({
+            "users": [
+                {
+                    "id": 1,
+                    "visitedCountries": [
+                        {
+                            "id": country.id.to_string(),
+                        }
+                    ]
                 },
             ]
         }),

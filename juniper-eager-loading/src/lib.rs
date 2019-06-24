@@ -749,6 +749,7 @@ impl<T> HasMany<T> {
 /// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = "company"` |
 /// | `join_model` | The model we have to join with | N/A | `join_model = "models::Employment"` |
 /// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = "employment"` |
+/// | `foreign_key_field` | The field on the join model that contains the parent models id | `{name of parent type in lowercase}_id` | `foreign_key_field = "car_id"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
 ///

@@ -133,6 +133,8 @@ pub struct HasManyThroughInner {
     #[darling(default)]
     join_model_field: Option<syn::Path>,
     #[darling(default)]
+    foreign_key_field: Option<syn::Ident>,
+    #[darling(default)]
     predicate_method: Option<syn::Ident>,
     #[darling(default)]
     graphql_field: Option<syn::Ident>,
@@ -282,7 +284,7 @@ impl From<HasManyThroughInner> for FieldArgs {
         }
 
         Self {
-            foreign_key_field: None,
+            foreign_key_field: inner.foreign_key_field,
             foreign_key_optional: false,
             model: inner.model,
             root_model_field: None,
