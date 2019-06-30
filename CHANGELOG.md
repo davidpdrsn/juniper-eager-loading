@@ -9,6 +9,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 ### Added
 
 - Support juniper-from-schema ^0.3.
+- Allow specifying foreign key for `has_many_through`.
 
 ### Changed
 
