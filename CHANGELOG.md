@@ -8,6 +8,24 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
+N/A
+
+### Changed
+
+N/A
+
+### Removed
+
+N/A
+
+### Fixed
+
+N/A
+
+## [0.2.0] - 2019-06-30
+
+### Added
+
 - Support juniper-from-schema ^0.3.
 - Allow specifying foreign key for `has_many_through`.
 
@@ -18,10 +36,6 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 ### Removed
 
 - The associated type `ChildModel` on `EagerLoadChildrenOfType` has been removed because it wasn't necessary.
-
-### Fixed
-
-N/A
 
 ## [0.1.2] - 2019-06-18
 
@@ -40,5 +54,6 @@ N/A
 
 Initial release.
 
+[0.2.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.2...0.2.0
 [0.1.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.0...0.1.1
