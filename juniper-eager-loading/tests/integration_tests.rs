@@ -1,5 +1,5 @@
 use assert_json_diff::{assert_json_eq, assert_json_include};
-use juniper::{Executor, FieldResult};
+use juniper::{Executor, FieldError, FieldResult};
 use juniper_eager_loading::{
     prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
 };
@@ -15,6 +15,7 @@ graphql_schema! {
     }
 
     type Query {
+      user(id: Int!): User! @juniper(ownership: "owned")
       users: [User!]! @juniper(ownership: "owned")
     }
 
@@ -28,6 +29,7 @@ graphql_schema! {
         city: City
         employments: [Employment!]! @juniper(ownership: "owned")
         companies: [Company!]! @juniper(ownership: "owned")
+        issues: [Issue!]! @juniper(ownership: "owned")
         primaryEmployment: Employment @juniper(ownership: "owned")
         primaryCompany: Company @juniper(ownership: "owned")
     }
@@ -51,6 +53,12 @@ graphql_schema! {
         id: Int!
         user: User!
         company: Company!
+    }
+
+    type Issue {
+        id: Int!
+        title: String!
+        reviewer: User
     }
 }
 
@@ -91,6 +99,13 @@ mod models {
         pub fn primary(&self, _: &super::Db) -> bool {
             self.primary
         }
+    }
+
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+    pub struct Issue {
+        pub id: i32,
+        pub title: String,
+        pub reviewer_id: Option<i32>,
     }
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
@@ -173,6 +188,22 @@ mod models {
         }
     }
 
+    impl juniper_eager_loading::LoadFrom<i32> for Issue {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let models = db
+                .issues
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(models)
+        }
+    }
+
     impl juniper_eager_loading::LoadFrom<Country> for City {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
@@ -234,6 +265,23 @@ mod models {
             Ok(employments)
         }
     }
+
+    impl juniper_eager_loading::LoadFrom<User> for Issue {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+            let user_ids = users.iter().map(|user| Some(user.id)).collect::<Vec<_>>();
+            let issues = db
+                .issues
+                .all_values()
+                .into_iter()
+                .filter(|issue| user_ids.contains(&issue.reviewer_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok(issues)
+        }
+    }
 }
 
 pub struct Db {
@@ -242,6 +290,7 @@ pub struct Db {
     cities: StatsHash<i32, models::City>,
     companies: StatsHash<i32, models::Company>,
     employments: StatsHash<i32, models::Employment>,
+    issues: StatsHash<i32, models::Issue>,
 }
 
 pub struct Context {
@@ -253,6 +302,20 @@ impl juniper::Context for Context {}
 pub struct Query;
 
 impl QueryFields for Query {
+    fn field_user<'a>(
+        &self,
+        executor: &Executor<'a, Context>,
+        trail: &QueryTrail<'a, User, Walked>,
+        id: i32,
+    ) -> FieldResult<User> {
+        let db = &executor.context().db;
+
+        let user_model = db.users.get(&id).ok_or("User not found")?.clone();
+        let user = User::new_from_model(&user_model);
+        let user = User::eager_load_all_children(user, &[user_model], db, trail)?;
+        Ok(user)
+    }
+
     fn field_users<'a>(
         &self,
         executor: &Executor<'a, Context>,
@@ -320,6 +383,13 @@ pub struct User {
     companies: HasManyThrough<Company>,
 
     #[has_many(
+        root_model_field = "issue",
+        foreign_key_field = "reviewer_id",
+        foreign_key_optional
+    )]
+    issues: HasMany<Issue>,
+
+    #[has_many(
         root_model_field = "employment",
         graphql_field = "primaryEmployment",
         predicate_method = "primary"
@@ -369,6 +439,14 @@ impl UserFields for User {
         _trail: &QueryTrail<'_, Company, Walked>,
     ) -> FieldResult<Vec<Company>> {
         Ok(self.companies.try_unwrap()?.clone().sorted())
+    }
+
+    fn field_issues(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, Issue, Walked>,
+    ) -> FieldResult<Vec<Issue>> {
+        Ok(self.issues.try_unwrap()?.clone().sorted())
     }
 
     fn field_primary_employment(
@@ -515,6 +593,84 @@ impl EmploymentFields for Employment {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
+#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+pub struct Issue {
+    issue: models::Issue,
+    #[option_has_one(root_model_field = "user")]
+    reviewer: OptionHasOne<User>,
+}
+
+impl IssueFields for Issue {
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+        Ok(&self.issue.id)
+    }
+
+    fn field_title(&self, _executor: &Executor<'_, Context>) -> FieldResult<&String> {
+        Ok(&self.issue.title)
+    }
+
+    fn field_reviewer(
+        &self,
+        _executor: &Executor<'_, Context>,
+        _trail: &QueryTrail<'_, User, Walked>,
+    ) -> FieldResult<&Option<User>> {
+        Ok(self.reviewer.try_unwrap()?)
+    }
+}
+
+#[test]
+fn loading_user() {
+    let mut countries = StatsHash::new("countries");
+    let cities = StatsHash::new("cities");
+    let mut users = StatsHash::new("users");
+
+    let mut country = models::Country { id: 10 };
+    let country_id = country.id;
+
+    let other_city = models::City { id: 30, country_id };
+
+    countries.insert(country_id, country);
+
+    users.insert(
+        1,
+        models::User {
+            id: 1,
+            country_id,
+            city_id: None,
+        },
+    );
+    users.insert(
+        2,
+        models::User {
+            id: 2,
+            country_id,
+            city_id: None,
+        },
+    );
+
+    let db = Db {
+        users,
+        countries,
+        cities,
+        employments: StatsHash::new("employments"),
+        companies: StatsHash::new("companies"),
+        issues: StatsHash::new("issues"),
+    };
+    let (json, counts) = run_query("query Test { user(id: 1) { id } }", db);
+
+    assert_eq!(1, counts.user_reads);
+    assert_eq!(0, counts.country_reads);
+    assert_eq!(0, counts.city_reads);
+
+    assert_json_include!(
+        expected: json!({
+            "user": { "id": 1 },
+        }),
+        actual: json,
+    );
+}
+
 #[test]
 fn loading_users() {
     let mut countries = StatsHash::new("countries");
@@ -551,6 +707,7 @@ fn loading_users() {
         cities,
         employments: StatsHash::new("employments"),
         companies: StatsHash::new("companies"),
+        issues: StatsHash::new("issues"),
     };
     let (json, counts) = run_query("query Test { users { id } }", db);
 
@@ -638,6 +795,7 @@ fn loading_users_and_associations() {
         cities,
         employments: StatsHash::new("employments"),
         companies: StatsHash::new("companies"),
+        issues: StatsHash::new("issue"),
     };
 
     let (json, counts) = run_query(
@@ -734,6 +892,7 @@ fn test_caching() {
         cities,
         employments: StatsHash::new("employments"),
         companies: StatsHash::new("companies"),
+        issues: StatsHash::new("issues"),
     };
 
     let (json, counts) = run_query(
@@ -839,6 +998,7 @@ fn test_loading_has_many_through() {
         countries,
         employments,
         users,
+        issues: StatsHash::new("issues"),
     };
 
     let (json, counts) = run_query(
@@ -888,6 +1048,78 @@ fn test_loading_has_many_through() {
                     "primaryCompany": {
                         "name": tonsser.name,
                     },
+                },
+            ],
+        }),
+        actual: json,
+    );
+}
+
+#[test]
+fn test_loading_has_many_fk_optional() {
+    let mut countries = StatsHash::new("countries");
+    let mut users = StatsHash::new("users");
+    let mut issues = StatsHash::new("issues");
+
+    let country = models::Country { id: 1 };
+    countries.insert(country.id, country.clone());
+
+    let user = models::User {
+        id: 2,
+        country_id: country.id,
+        city_id: None,
+    };
+    users.insert(user.id, user.clone());
+
+    let assigned_issue = models::Issue {
+        id: 3,
+        title: "This issue is assigned to somebody".to_string(),
+        reviewer_id: Some(user.id),
+    };
+    issues.insert(assigned_issue.id, assigned_issue.clone());
+
+    let unassigned_issue = models::Issue {
+        id: 4,
+        title: "This issue hasn't been assigned to somebody".to_string(),
+        reviewer_id: None,
+    };
+    issues.insert(unassigned_issue.id, unassigned_issue.clone());
+
+    let db = Db {
+        cities: StatsHash::new("cities"),
+        companies: StatsHash::new("companies"),
+        countries,
+        employments: StatsHash::new("employments"),
+        users,
+        issues,
+    };
+
+    let (json, _counts) = run_query(
+        r#"
+        query Test {
+            users {
+                id
+                issues {
+                    id
+                    title
+                }
+            }
+        }
+    "#,
+        db,
+    );
+
+    assert_json_include!(
+        expected: json!({
+            "users": [
+                {
+                    "id": user.id,
+                    "issues": [
+                        {
+                            "id": assigned_issue.id,
+                            "title": assigned_issue.title,
+                        },
+                    ],
                 },
             ],
         }),

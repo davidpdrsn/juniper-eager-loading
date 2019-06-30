@@ -406,11 +406,11 @@
 //! # Diesel helper
 //!
 //! Implementing [`LoadFrom`][] for lots of model types might involve lots of boilerplate. If you're
-//! using [Diesel][] you can use the [`impl_LoadFrom_for_diesel`] macro to hide all of that
+//! using [Diesel][] you can use the [`impl_load_from_for_diesel`] macro to hide all of that
 //! boilerplate.
 //!
 //! [`LoadFrom`]: trait.LoadFrom.html
-//! [`impl_LoadFrom_for_diesel`]: macro.impl_LoadFrom_for_diesel.html
+//! [`impl_load_from_for_diesel`]: macro.impl_load_from_for_diesel.html
 //! [Diesel]: https://diesel.rs
 //! [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 //!
@@ -431,7 +431,7 @@
 //! [Juniper]: https://github.com/graphql-rust/juniper
 //! [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
-#![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.1.2")]
 #![deny(
     missing_docs,
     dead_code,
@@ -669,6 +669,7 @@ impl<T> OptionHasOne<T> {
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = "user_id"` |
+/// | `foreign_key_optional` | The foreign key type is optional | Not set | `foreign_key_optional` |
 /// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
@@ -745,6 +746,7 @@ impl<T> HasMany<T> {
 /// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = "company"` |
 /// | `join_model` | The model we have to join with | N/A | `join_model = "models::Employment"` |
 /// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = "employment"` |
+/// | `foreign_key_field` | The field on the join model that contains the parent models id | `{name of parent type in lowercase}_id` | `foreign_key_field = "car_id"` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
 ///
@@ -1056,8 +1058,10 @@ pub trait GenericQueryTrail<T, K> {}
 pub trait EagerLoadChildrenOfType<Child, QueryTrailT, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
-    Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error, Id = Self::Id>
-        + EagerLoadAllChildren<QueryTrailT>
+    Child: GraphqlNodeForModel<
+            Connection = Self::Connection,
+            Error = Self::Error,
+        > + EagerLoadAllChildren<QueryTrailT>
         + Clone,
     QueryTrailT: GenericQueryTrail<Child, Walked>,
     JoinModel: 'static + Clone + ?Sized,
@@ -1221,10 +1225,10 @@ where
         trail: &QueryTrailT,
     ) -> Result<(), Self::Error>;
 
-    /// Perform eager loading for list of GraphQL values.
+    /// Perform eager loading for a single GraphQL value.
     ///
     /// This is the function you should call for eager loading associations of a single value.
-    fn eager_load_all_chilren(
+    fn eager_load_all_children(
         node: Self,
         models: &[Self::Model],
         db: &Self::Connection,
@@ -1244,12 +1248,12 @@ where
 /// Normally `T` will be your id type but for [`HasMany`][] and [`HasManyThrough`][] it might also
 /// be other values.
 ///
-/// If you're using Diesel it is recommend that you use the macro [`impl_LoadFrom_for_diesel`][] to
+/// If you're using Diesel it is recommend that you use the macro [`impl_load_from_for_diesel`][] to
 /// generate implementations.
 ///
 /// [`HasMany`]: struct.HasMany.html
 /// [`HasManyThrough`]: struct.HasManyThrough.html
-/// [`impl_LoadFrom_for_diesel`]: macro.impl_LoadFrom_for_diesel.html
+/// [`impl_load_from_for_diesel`]: macro.impl_load_from_for_diesel.html
 pub trait LoadFrom<T>: Sized {
     /// The error type. This must match the error set in `#[eager_loading(error_type = _)]`.
     type Error;
