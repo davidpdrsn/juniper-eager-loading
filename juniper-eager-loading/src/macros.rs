@@ -152,10 +152,8 @@
 ///     type Connection = PgConnection;
 ///
 ///     fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-///         use diesel::pg::expression::dsl::any;
-///
 ///         users::table
-///             .filter(users::id.eq(any(ids)))
+///             .filter(users::id.eq_any(ids))
 ///             .load::<User>(db)
 ///             .map_err(From::from)
 ///     }
@@ -167,11 +165,9 @@
 ///     type Connection = PgConnection;
 ///
 ///     fn load(froms: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-///         use diesel::pg::expression::dsl::any;
-///
 ///         let from_ids = froms.iter().map(|other| other.id).collect::<Vec<_>>();
 ///         employments::table
-///             .filter(employments::user_id.eq(any(from_ids)))
+///             .filter(employments::user_id.eq_any(from_ids))
 ///             .load(db)
 ///             .map_err(From::from)
 ///     }
@@ -217,10 +213,8 @@ macro_rules! __impl_load_from_for_diesel_inner {
                 ids: &[$id_ty],
                 db: &Self::Connection,
             ) -> Result<Vec<Self>, Self::Error> {
-                use diesel::pg::expression::dsl::any;
-
                 $table::table
-                    .filter($table::id.eq(any(ids)))
+                    .filter($table::id.eq_any(ids))
                     .load::<$ty>(db)
                     .map_err(From::from)
             }
@@ -247,11 +241,9 @@ macro_rules! __impl_load_from_for_diesel_inner {
                 froms: &[$join_ty],
                 db: &Self::Connection,
             ) -> Result<Vec<Self>, Self::Error> {
-                use diesel::pg::expression::dsl::any;
-
                 let from_ids = froms.iter().map(|other| other.$join_from).collect::<Vec<_>>();
                 $table::table
-                    .filter($table::$join_to.eq(any(from_ids)))
+                    .filter($table::$join_to.eq_any(from_ids))
                     .load(db)
                     .map_err(From::from)
             }
