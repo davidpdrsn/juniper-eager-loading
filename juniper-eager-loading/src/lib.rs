@@ -1058,10 +1058,8 @@ pub trait GenericQueryTrail<T, K> {}
 pub trait EagerLoadChildrenOfType<Child, QueryTrailT, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
-    Child: GraphqlNodeForModel<
-            Connection = Self::Connection,
-            Error = Self::Error,
-        > + EagerLoadAllChildren<QueryTrailT>
+    Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error>
+        + EagerLoadAllChildren<QueryTrailT>
         + Clone,
     QueryTrailT: GenericQueryTrail<Child, Walked>,
     JoinModel: 'static + Clone + ?Sized,
