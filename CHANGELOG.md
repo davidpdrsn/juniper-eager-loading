@@ -21,7 +21,7 @@ N/A
 
 ### Fixed
 
-N/A
+- Fixed "mutable_borrow_reservation_conflict" warnings.
 
 ## [0.2.0] - 2019-06-30
 

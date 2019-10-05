@@ -61,7 +61,7 @@ impl DeriveData {
             }
         });
 
-        self.tokens.extend(quote! {
+        let code = quote! {
             impl juniper_eager_loading::GraphqlNodeForModel for #struct_name {
                 type Model = #model;
                 type Id = #id;
@@ -74,7 +74,8 @@ impl DeriveData {
                     }
                 }
             }
-        });
+        };
+        self.tokens.extend(code);
     }
 
     fn gen_eager_load_children_of_type(&mut self) {
@@ -82,7 +83,8 @@ impl DeriveData {
             .struct_fields()
             .filter_map(|field| self.gen_eager_load_children_of_type_for_field(field));
 
-        self.tokens.extend(quote! { #(#impls)* });
+        let code = quote! { #(#impls)* };
+        self.tokens.extend(code);
     }
 
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
@@ -453,11 +455,11 @@ impl DeriveData {
 
         let code = quote! {
             impl juniper_eager_loading::EagerLoadAllChildren for #struct_name {
-                fn eager_load_all_children_for_each<'a>(
+                fn eager_load_all_children_for_each(
                     nodes: &mut [Self],
                     models: &[Self::Model],
                     db: &Self::Connection,
-                    trail: &juniper_from_schema::QueryTrail<'a, Self, juniper_from_schema::Walked>,
+                    trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
                 ) -> Result<(), Self::Error> {
                     #(#eager_load_children_calls)*
 
