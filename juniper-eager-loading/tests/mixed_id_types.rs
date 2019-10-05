@@ -1,12 +1,13 @@
-use assert_json_diff::{assert_json_eq, assert_json_include};
+#![allow(unused_variables, unused_imports, dead_code, unused_mut)]
+
+mod helpers;
+
+use assert_json_diff::assert_json_include;
+use helpers::StatsHash;
 use juniper::{EmptyMutation, Executor, FieldResult, ID};
-use juniper_eager_loading::{
-    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
-};
+use juniper_eager_loading::{prelude::*, EagerLoading, HasManyThrough, HasOne};
 use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 graphql_schema! {
     schema {
@@ -356,68 +357,4 @@ fn run_query(query: &str, db: Db) -> (Value, DbStats) {
             country_reads: ctx.db.countries.reads_count(),
         },
     )
-}
-
-struct StatsHash<K: Hash + Eq, V> {
-    map: HashMap<K, V>,
-    count: AtomicUsize,
-    name: &'static str,
-}
-
-impl<K: Hash + Eq, V> StatsHash<K, V> {
-    fn new(name: &'static str) -> Self {
-        StatsHash {
-            map: HashMap::default(),
-            count: AtomicUsize::default(),
-            name,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn get<Q>(&self, k: &Q) -> Option<&V>
-    where
-        K: Borrow<Q>,
-        Q: ?Sized + Hash + Eq,
-    {
-        self.increment_reads_count();
-        self.map.get(k)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_mut<Q: ?Sized>(&mut self, k: &Q) -> Option<&mut V>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq,
-    {
-        self.increment_reads_count();
-        self.map.get_mut(k)
-    }
-
-    fn all_values(&self) -> Vec<&V> {
-        self.increment_reads_count();
-        self.map.iter().map(|(_, v)| v).collect()
-    }
-
-    fn reads_count(&self) -> usize {
-        self.count.load(Ordering::SeqCst)
-    }
-
-    fn insert(&mut self, k: K, v: V) -> Option<V> {
-        self.map.insert(k, v)
-    }
-
-    fn increment_reads_count(&self) {
-        self.count.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-trait SortedExtension {
-    fn sorted(self) -> Self;
-}
-
-impl<T: std::cmp::Ord> SortedExtension for Vec<T> {
-    fn sorted(mut self) -> Self {
-        self.sort();
-        self
-    }
 }
