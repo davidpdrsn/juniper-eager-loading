@@ -8,16 +8,29 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-- Documentation section about eager loading interface or union types.
+N/A
 
 ### Changed
 
-- The `QueryTrail` type parameter from `EagerLoadChildrenOfType` has been removed since it is no longer necessary thanks to <https://github.com/davidpdrsn/juniper-from-schema/pull/82>.
-- The `QueryTrail` type parameter has also been removed from `EagerLoadAllChildren` for the same reason.
+N/A
 
 ### Removed
 
-- `GenericQueryTrail` has been removed since it is no longer necessary thanks to <https://github.com/davidpdrsn/juniper-from-schema/pull/82>.
+N/A
+
+### Fixed
+
+N/A
+
+## [0.3.0] - 2019-10-05
+
+### Added
+
+- Documentation section about eager loading interface or union types. [#19](https://github.com/davidpdrsn/juniper-eager-loading/pull/19)
+
+### Removed
+
+- `GenericQueryTrail` has been removed since it is no longer necessary thanks to <https://github.com/davidpdrsn/juniper-from-schema/pull/82>. This also lead to the removal of the `QueryTrail` type parameter on `EagerLoadChildrenOfType` and `EagerLoadAllChildren`. [#20](https://github.com/davidpdrsn/juniper-eager-loading/pull/20)
 
 ### Fixed
 
@@ -55,6 +68,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 Initial release.
 
+[0.3.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.2...0.2.0
 [0.1.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.0...0.1.1

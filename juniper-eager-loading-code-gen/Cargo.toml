@@ -10,7 +10,7 @@ license = "MIT"
 name = "juniper-eager-loading-code-gen"
 readme = "README.md"
 repository = "https://github.com/davidpdrsn/juniper-eager-loading.git"
-version = "0.2.0"
+version = "0.3.0"
 
 [dependencies]
 proc-macro2 = "^0.4"
