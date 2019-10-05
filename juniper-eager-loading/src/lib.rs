@@ -24,6 +24,7 @@
 //!     - [Attributes](#attributes)
 //! - [Associations](#associations)
 //!     - [Attributes supported on all associations](#attributes-supported-on-all-associations)
+//! - [Eager loading interfaces or unions](#eager-loading-interfaces-or-unions)
 //! - [Diesel helper](#diesel-helper)
 //! - [When your GraphQL schema doesn't match your database schema](#when-your-graphql-schema-doesnt-match-your-database-schema)
 //!
@@ -402,6 +403,13 @@
 //!
 //! The resulting code wont be formatted. We recommend you do that with
 //! [rustfmt](https://github.com/rust-lang/rustfmt).
+//!
+//! # Eager loading interfaces or unions
+//!
+//! Eager loading interfaces or unions is possible but it will require calling `.downcast()` on the
+//! `QueryTrail`. See the [juniper-from-schema docs for more
+//! info](https://docs.rs/juniper-from-schema/0.4.0/juniper_from_schema/#downcasting-for-interface-and-union-querytrails)
+//! fo more info.
 //!
 //! # Diesel helper
 //!
