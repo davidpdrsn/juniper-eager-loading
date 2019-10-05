@@ -115,7 +115,6 @@ mod models {
             unimplemented!()
         }
     }
-
 }
 
 #[derive(Clone, EagerLoading)]

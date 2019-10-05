@@ -3,10 +3,8 @@ mod field_args;
 use darling::{FromDeriveInput, FromMeta};
 use field_args::{DeriveArgs, FieldArgs, HasMany, HasManyThrough, HasOne, OptionHasOne};
 use heck::{CamelCase, SnakeCase};
-use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{
     parse_macro_input, DeriveInput, GenericArgument, Ident, NestedMeta, PathArguments, Type,
 };
@@ -20,22 +18,7 @@ pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let out = DeriveData::new(ast, args);
     let tokens = out.build_derive_output();
-
-    derive_macro_called();
-
     tokens.into()
-}
-
-lazy_static! {
-    static ref FIRST_DERIVE_CALL: AtomicBool = { AtomicBool::new(true) };
-}
-
-fn derive_macro_called() {
-    FIRST_DERIVE_CALL.store(false, Ordering::SeqCst)
-}
-
-fn first_time_calling_derive_macro() -> bool {
-    FIRST_DERIVE_CALL.load(Ordering::SeqCst)
 }
 
 struct DeriveData {
@@ -54,24 +37,11 @@ impl DeriveData {
     }
 
     fn build_derive_output(mut self) -> TokenStream {
-        if first_time_calling_derive_macro() {
-            self.gen_impl_of_marker_trait();
-        }
-
         self.gen_graphql_node_for_model();
         self.gen_eager_load_children_of_type();
         self.gen_eager_load_all_children();
 
         self.tokens
-    }
-
-    fn gen_impl_of_marker_trait(&mut self) {
-        self.tokens.extend(quote! {
-            impl<'a, T> juniper_eager_loading::GenericQueryTrail<T, juniper_from_schema::Walked>
-                for QueryTrail<'a, T, juniper_from_schema::Walked>
-            {
-            }
-        });
     }
 
     fn gen_graphql_node_for_model(&mut self) {
@@ -134,9 +104,8 @@ impl DeriveData {
             #[allow(missing_doc, dead_code)]
             struct #context;
 
-            impl<'a> EagerLoadChildrenOfType<
+            impl EagerLoadChildrenOfType<
                 #inner_type,
-                QueryTrail<'a, #inner_type, juniper_from_schema::Walked>,
                 #context,
                 #join_model_impl,
             > for #struct_name {
@@ -482,22 +451,21 @@ impl DeriveData {
             .struct_fields()
             .filter_map(|field| self.gen_eager_load_all_children_for_field(field));
 
-        self.tokens.extend(quote! {
-            impl<'a> juniper_eager_loading::EagerLoadAllChildren<
-                QueryTrail<'a, Self, juniper_from_schema::Walked>
-            > for #struct_name {
-                fn eager_load_all_children_for_each(
+        let code = quote! {
+            impl juniper_eager_loading::EagerLoadAllChildren for #struct_name {
+                fn eager_load_all_children_for_each<'a>(
                     nodes: &mut [Self],
                     models: &[Self::Model],
                     db: &Self::Connection,
-                    trail: &QueryTrail<'a, Self, juniper_from_schema::Walked>,
+                    trail: &juniper_from_schema::QueryTrail<'a, Self, juniper_from_schema::Walked>,
                 ) -> Result<(), Self::Error> {
                     #(#eager_load_children_calls)*
 
                     Ok(())
                 }
             }
-        });
+        };
+        self.tokens.extend(code);
     }
 
     fn gen_eager_load_all_children_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
@@ -522,7 +490,7 @@ impl DeriveData {
 
         Some(quote! {
             if let Some(trail) = trail.#field_name().walk() {
-                EagerLoadChildrenOfType::<#inner_type, _, #context, _>::eager_load_children(
+                EagerLoadChildrenOfType::<#inner_type, #context, _>::eager_load_children(
                     nodes,
                     models,
                     db,

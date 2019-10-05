@@ -12,11 +12,12 @@ N/A
 
 ### Changed
 
-N/A
+- The `QueryTrail` type parameter from `EagerLoadChildrenOfType` has been removed since it is no longer necessary thanks to <https://github.com/davidpdrsn/juniper-from-schema/pull/82>.
+- The `QueryTrail` type parameter has also been removed from `EagerLoadAllChildren` for the same reason.
 
 ### Removed
 
-N/A
+- `GenericQueryTrail` has been removed since it is no longer necessary thanks to <https://github.com/davidpdrsn/juniper-from-schema/pull/82>.
 
 ### Fixed
 
