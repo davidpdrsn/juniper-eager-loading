@@ -190,11 +190,17 @@ fn loading_users_and_associations() {
     countries.insert(country.id, country.clone());
 
     let mut users = StatsHash::new("users");
-    let user = models::User { id: 10, country_id: country.id };
+    let user = models::User {
+        id: 10,
+        country_id: country.id,
+    };
     users.insert(user.id, user.clone());
 
     let mut cities = StatsHash::new("cities");
-    let city = models::City { id: 10, country_id: country.id };
+    let city = models::City {
+        id: 10,
+        country_id: country.id,
+    };
     cities.insert(city.id, city.clone());
 
     let db = Db {
