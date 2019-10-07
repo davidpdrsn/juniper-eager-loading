@@ -413,12 +413,11 @@
 //!
 //! # Diesel helper
 //!
-//! Implementing [`LoadFrom`][] for lots of model types might involve lots of boilerplate. If you're
-//! using [Diesel][] you can use the [`impl_load_from_for_diesel`] macro to hide all of that
-//! boilerplate.
+//! Implementing [`LoadFrom`][] for lots of model types might involve lots of boilerplate. If
+//! you're using Diesel it is recommend that you use one of [the macros to
+//! generate](index.html#macros) implementations.
 //!
 //! [`LoadFrom`]: trait.LoadFrom.html
-//! [`impl_load_from_for_diesel`]: macro.impl_load_from_for_diesel.html
 //! [Diesel]: https://diesel.rs
 //! [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 //!
@@ -1245,12 +1244,11 @@ where
 /// Normally `T` will be your id type but for [`HasMany`][] and [`HasManyThrough`][] it might also
 /// be other values.
 ///
-/// If you're using Diesel it is recommend that you use the macro [`impl_load_from_for_diesel`][] to
-/// generate implementations.
+/// If you're using Diesel it is recommend that you use one of [the macros to
+/// generate](index.html#macros) implementations.
 ///
 /// [`HasMany`]: struct.HasMany.html
 /// [`HasManyThrough`]: struct.HasManyThrough.html
-/// [`impl_load_from_for_diesel`]: macro.impl_load_from_for_diesel.html
 pub trait LoadFrom<T>: Sized {
     /// The error type. This must match the error set in `#[eager_loading(error_type = _)]`.
     type Error;

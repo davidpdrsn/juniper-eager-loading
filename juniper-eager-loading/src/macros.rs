@@ -1,6 +1,9 @@
-/// This macro will implement [`LoadFrom`][] for Diesel models.
+/// This macro will implement [`LoadFrom`][] for Diesel models using the Postgres backend.
+///
+/// It'll use an [`= ANY`] which is only supported by Postgres.
 ///
 /// [`LoadFrom`]: trait.LoadFrom.html
+/// [`= ANY`]: http://docs.diesel.rs/diesel/expression_methods/trait.ExpressionMethods.html#method.eq_any
 ///
 /// # Example usage
 ///
@@ -10,7 +13,7 @@
 ///
 /// use diesel::pg::PgConnection;
 /// use diesel::prelude::*;
-/// use juniper_eager_loading::impl_load_from_for_diesel;
+/// use juniper_eager_loading::impl_load_from_for_diesel_pg;
 /// #
 /// # fn main() {}
 ///
@@ -51,7 +54,7 @@
 ///     company_id: i32,
 /// }
 ///
-/// impl_load_from_for_diesel! {
+/// impl_load_from_for_diesel_pg! {
 ///     (
 ///         error = diesel::result::Error,
 ///         connection = PgConnection,
@@ -113,7 +116,7 @@
 /// # extern crate diesel;
 /// # use diesel::pg::PgConnection;
 /// # use diesel::prelude::*;
-/// # use juniper_eager_loading::impl_load_from_for_diesel;
+/// # use juniper_eager_loading::impl_load_from_for_diesel_pg;
 /// # fn main() {}
 /// # table! {
 /// #     users (id) {
@@ -178,7 +181,7 @@
 /// }
 /// ```
 #[macro_export]
-macro_rules! impl_load_from_for_diesel {
+macro_rules! impl_load_from_for_diesel_pg {
     (
         (
             error = $error:path,
@@ -187,7 +190,7 @@ macro_rules! impl_load_from_for_diesel {
             $($inner:tt)*
         }
     ) => {
-        $crate::__impl_load_from_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner_pg! {
             error = $error,
             connection = $connection,
             $( $inner )*
@@ -197,7 +200,7 @@ macro_rules! impl_load_from_for_diesel {
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __impl_load_from_for_diesel_inner {
+macro_rules! __impl_load_from_for_diesel_inner_pg {
     (
         error = $error:path,
         connection = $connection:path,
@@ -217,16 +220,14 @@ macro_rules! __impl_load_from_for_diesel_inner {
                 ids: &[$id_ty],
                 db: &Self::Connection,
             ) -> Result<Vec<Self>, Self::Error> {
-                use diesel::pg::expression::dsl::any;
-
                 $table::table
-                    .filter($table::id.eq(any(ids)))
+                    .filter($table::id.eq(diesel::pg::expression::dsl::any(ids)))
                     .load::<$ty>(db)
                     .map_err(From::from)
             }
         }
 
-        $crate::__impl_load_from_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner_pg! {
             error = $error,
             connection = $connection,
             $($rest)*
@@ -247,20 +248,261 @@ macro_rules! __impl_load_from_for_diesel_inner {
                 froms: &[$join_ty],
                 db: &Self::Connection,
             ) -> Result<Vec<Self>, Self::Error> {
-                use diesel::pg::expression::dsl::any;
-
                 let from_ids = froms.iter().map(|other| other.$join_from).collect::<Vec<_>>();
                 $table::table
-                    .filter($table::$join_to.eq(any(from_ids)))
+                    .filter($table::$join_to.eq(diesel::pg::expression::dsl::any(from_ids)))
                     .load(db)
                     .map_err(From::from)
             }
         }
 
-        $crate::__impl_load_from_for_diesel_inner! {
+        $crate::__impl_load_from_for_diesel_inner_pg! {
             error = $error,
             connection = $connection,
             $($rest)*
         }
     };
+}
+
+/// Same as [`impl_load_from_for_diesel_pg`](macro.impl_load_from_for_diesel_pg.html) for but
+/// MySQL.
+///
+/// # Example usage
+///
+/// ```
+/// #[macro_use]
+/// extern crate diesel;
+///
+/// use diesel::mysql::MysqlConnection;
+/// use diesel::prelude::*;
+/// use juniper_eager_loading::impl_load_from_for_diesel_mysql;
+/// #
+/// # fn main() {}
+///
+/// table! {
+///     users (id) {
+///         id -> Integer,
+///     }
+/// }
+///
+/// table! {
+///     companies (id) {
+///         id -> Integer,
+///     }
+/// }
+///
+/// table! {
+///     employments (id) {
+///         id -> Integer,
+///         user_id -> Integer,
+///         company_id -> Integer,
+///     }
+/// }
+///
+/// #[derive(Queryable)]
+/// struct User {
+///     id: i32,
+/// }
+///
+/// #[derive(Queryable)]
+/// struct Company {
+///     id: i32,
+/// }
+///
+/// #[derive(Queryable)]
+/// struct Employment {
+///     id: i32,
+///     user_id: i32,
+///     company_id: i32,
+/// }
+///
+/// impl_load_from_for_diesel_mysql! {
+///     (
+///         error = diesel::result::Error,
+///         connection = MysqlConnection,
+///     ) => {
+///         i32 -> (users, User),
+///         i32 -> (companies, Company),
+///         i32 -> (employments, Employment),
+///
+///         User.id -> (employments.user_id, Employment),
+///         Company.id -> (employments.company_id, Employment),
+///
+///         Employment.company_id -> (companies.id, Company),
+///         Employment.user_id -> (users.id, User),
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_load_from_for_diesel_mysql {
+    (
+        (
+            error = $error:path,
+            connection = $connection:path,
+        ) => {
+            $($inner:tt)*
+        }
+    ) => {
+        $crate::__impl_load_from_for_diesel_inner_mysql! {
+            error = $error,
+            connection = $connection,
+            $( $inner )*
+        }
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __impl_load_from_for_diesel_inner_mysql {
+    (
+        error = $error:path,
+        connection = $connection:path,
+    ) => {};
+
+    (
+        error = $error:path,
+        connection = $connection:path,
+        $id_ty:ident -> ($table:ident, $ty:ident),
+        $( $rest:tt )*
+    ) => {
+        impl juniper_eager_loading::LoadFrom<$id_ty> for $ty {
+            type Error = $error;
+            type Connection = $connection;
+
+            fn load(
+                ids: &[$id_ty],
+                db: &Self::Connection,
+            ) -> Result<Vec<Self>, Self::Error> {
+                $table::table
+                    .filter($table::id.eq_any(ids))
+                    .load::<$ty>(db)
+                    .map_err(From::from)
+            }
+        }
+
+        $crate::__impl_load_from_for_diesel_inner_mysql! {
+            error = $error,
+            connection = $connection,
+            $($rest)*
+        }
+    };
+
+    (
+        error = $error:path,
+        connection = $connection:path,
+        $join_ty:ident . $join_from:ident -> ($table:ident . $join_to:ident, $ty:ident),
+        $( $rest:tt )*
+    ) => {
+        impl juniper_eager_loading::LoadFrom<$join_ty> for $ty {
+            type Error = $error;
+            type Connection = $connection;
+
+            fn load(
+                froms: &[$join_ty],
+                db: &Self::Connection,
+            ) -> Result<Vec<Self>, Self::Error> {
+                let from_ids = froms.iter().map(|other| other.$join_from).collect::<Vec<_>>();
+                $table::table
+                    .filter($table::$join_to.eq_any(from_ids))
+                    .load(db)
+                    .map_err(From::from)
+            }
+        }
+
+        $crate::__impl_load_from_for_diesel_inner_mysql! {
+            error = $error,
+            connection = $connection,
+            $($rest)*
+        }
+    };
+}
+
+/// Same as [`impl_load_from_for_diesel_pg`](macro.impl_load_from_for_diesel_pg.html) for but
+/// SQLite.
+///
+/// # Example usage
+///
+/// ```
+/// #[macro_use]
+/// extern crate diesel;
+///
+/// use diesel::sqlite::SqliteConnection;
+/// use diesel::prelude::*;
+/// use juniper_eager_loading::impl_load_from_for_diesel_sqlite;
+/// #
+/// # fn main() {}
+///
+/// table! {
+///     users (id) {
+///         id -> Integer,
+///     }
+/// }
+///
+/// table! {
+///     companies (id) {
+///         id -> Integer,
+///     }
+/// }
+///
+/// table! {
+///     employments (id) {
+///         id -> Integer,
+///         user_id -> Integer,
+///         company_id -> Integer,
+///     }
+/// }
+///
+/// #[derive(Queryable)]
+/// struct User {
+///     id: i32,
+/// }
+///
+/// #[derive(Queryable)]
+/// struct Company {
+///     id: i32,
+/// }
+///
+/// #[derive(Queryable)]
+/// struct Employment {
+///     id: i32,
+///     user_id: i32,
+///     company_id: i32,
+/// }
+///
+/// impl_load_from_for_diesel_sqlite! {
+///     (
+///         error = diesel::result::Error,
+///         connection = SqliteConnection,
+///     ) => {
+///         i32 -> (users, User),
+///         i32 -> (companies, Company),
+///         i32 -> (employments, Employment),
+///
+///         User.id -> (employments.user_id, Employment),
+///         Company.id -> (employments.company_id, Employment),
+///
+///         Employment.company_id -> (companies.id, Company),
+///         Employment.user_id -> (users.id, User),
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_load_from_for_diesel_sqlite {
+    ( $($token:tt)* ) => {
+        $crate::impl_load_from_for_diesel_mysql! { $($token)* }
+    }
+}
+
+
+/// This method should not be used anymore. Instead use [`impl_load_from_for_diesel_pg!`][] as it
+/// is more specific.
+///
+/// [`impl_load_from_for_diesel_pg!`]: macro.impl_load_from_for_diesel_pg.html
+/// [`LoadFrom`]: trait.LoadFrom.html
+#[macro_export]
+#[deprecated(since = "0.3.1", note = "Use `impl_load_from_for_diesel_pg` instead")]
+macro_rules! impl_load_from_for_diesel {
+    ( $($token:tt)* ) => {
+        $crate::impl_load_from_for_diesel_pg! { $($token)* }
+    }
 }

@@ -8,11 +8,14 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-N/A
+- Add specific versions of `impl_load_from_for_diesel_*` for each backend supported by Diesel:
+    - `impl_load_from_for_diesel_pg` (formerly `impl_load_from_for_diesel`)
+    - `impl_load_from_for_diesel_sqlite`
+    - `impl_load_from_for_diesel_mysql`
 
 ### Changed
 
-N/A
+- Deprecate `impl_load_from_for_diesel`. `impl_load_from_for_diesel_pg` should be used instead. `impl_load_from_for_diesel` will be removed in 0.4.0.
 
 ### Removed
 
