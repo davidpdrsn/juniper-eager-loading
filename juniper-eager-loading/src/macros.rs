@@ -493,7 +493,6 @@ macro_rules! impl_load_from_for_diesel_sqlite {
     }
 }
 
-
 /// This method should not be used anymore. Instead use [`impl_load_from_for_diesel_pg!`][] as it
 /// is more specific.
 ///
