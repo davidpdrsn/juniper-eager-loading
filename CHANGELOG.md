@@ -8,14 +8,11 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
-- Add specific versions of `impl_load_from_for_diesel_*` for each backend supported by Diesel:
-    - `impl_load_from_for_diesel_pg` (formerly `impl_load_from_for_diesel`)
-    - `impl_load_from_for_diesel_sqlite`
-    - `impl_load_from_for_diesel_mysql`
+N/A
 
 ### Changed
 
-- Deprecate `impl_load_from_for_diesel`. `impl_load_from_for_diesel_pg` should be used instead. `impl_load_from_for_diesel` will be removed in 0.4.0.
+N/A
 
 ### Removed
 
@@ -24,6 +21,19 @@ N/A
 ### Fixed
 
 N/A
+
+## [0.3.1] - 2019-10-09
+
+### Added
+
+- Add specific versions of `impl_load_from_for_diesel_*` for each backend supported by Diesel:
+    - `impl_load_from_for_diesel_pg` (formerly `impl_load_from_for_diesel`)
+    - `impl_load_from_for_diesel_sqlite`
+    - `impl_load_from_for_diesel_mysql`
+
+### Changed
+
+- Deprecate `impl_load_from_for_diesel`. `impl_load_from_for_diesel_pg` should be used instead. `impl_load_from_for_diesel` will be removed in 0.4.0.
 
 ## [0.3.0] - 2019-10-05
 
@@ -71,6 +81,7 @@ N/A
 
 Initial release.
 
+[0.3.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.2...0.2.0
 [0.1.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.1...0.1.2
