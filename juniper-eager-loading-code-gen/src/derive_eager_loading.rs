@@ -519,7 +519,7 @@ fn get_type_from_association(ty: &syn::Type) -> Option<&syn::Type> {
     let args = if_let_or_none!(PathArguments::AngleBracketed, &segment.arguments);
     let generic_argument: &syn::GenericArgument = if_let_or_none!(Some, args.args.last());
     let ty = if_let_or_none!(GenericArgument::Type, generic_argument);
-    Some(ty)
+    Some(remove_possible_box_wrapper(ty))
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -592,5 +592,39 @@ struct FieldDeriveData {
 impl FieldDeriveData {
     fn model_id_field(&self) -> Ident {
         Ident::new(&format!("{}_id", self.model_field), Span::call_site())
+    }
+}
+
+fn remove_possible_box_wrapper(ty: &Type) -> &syn::Type {
+    if let Type::Path(type_path) = ty {
+        let last_segment = if let Some(x) = type_path.path.segments.last() {
+            x
+        } else {
+            return ty;
+        };
+
+        if last_segment.ident == "Box" {
+            let args = if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
+                args
+            } else {
+                return ty;
+            };
+
+            let generic_argument = if let Some(x) = args.args.last() {
+                x
+            } else {
+                return ty;
+            };
+
+            if let syn::GenericArgument::Type(inner_ty) = generic_argument {
+                inner_ty
+            } else {
+                ty
+            }
+        } else {
+            ty
+        }
+    } else {
+        ty
     }
 }

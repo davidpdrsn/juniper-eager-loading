@@ -6,7 +6,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-None.
+- Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.
 
 ### Breaking changes
 
@@ -44,6 +44,7 @@ None.
   - Add second generic argument to `LoadFrom` which will be the arguments and accept argument of that type in `LoadFrom::load`.
 
 If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
+
 ## [0.3.1] - 2019-10-09
 
 ### Added

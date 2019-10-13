@@ -494,11 +494,13 @@
     unused_variables
 )]
 
+mod association;
 mod macros;
 
 use juniper_from_schema::{QueryTrail, Walked};
-use std::{fmt, hash::Hash};
+use std::{fmt, hash::Hash, mem::transmute_copy};
 
+pub use association::Association;
 pub use juniper_eager_loading_code_gen::EagerLoading;
 
 #[doc(hidden)]
@@ -613,10 +615,6 @@ impl<T> HasOneInner<T> {
             HasOneInner::NotLoaded => Err(Error::NotLoaded(AssociationType::HasOne)),
             HasOneInner::LoadFailed => Err(Error::LoadFailed(AssociationType::HasOne)),
         }
-    }
-
-    fn loaded(&mut self, inner: T) {
-        std::mem::replace(self, HasOneInner::Loaded(inner));
     }
 
     fn assert_loaded_otherwise_failed(&mut self) {
@@ -1095,7 +1093,7 @@ where
                             //
                             // `HasManyThrough` requires something to join the two types on,
                             // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
-                            std::mem::transmute_copy::<(), JoinModel>(&())
+                            transmute_copy::<(), JoinModel>(&())
                         };
 
                         (model, join_model)
@@ -1153,61 +1151,6 @@ where
         }
 
         Ok(())
-    }
-}
-
-/// Methods available for all association types.
-pub trait Association<T> {
-    /// Store the loaded child on the association.
-    fn loaded_child(&mut self, child: T);
-
-    /// The association should have been loaded by now, if not store an error inside the
-    /// association (if applicable for the particular association).
-    fn assert_loaded_otherwise_failed(&mut self);
-}
-
-impl<T> Association<T> for HasOne<T> {
-    fn loaded_child(&mut self, child: T) {
-        self.0.loaded(child)
-    }
-
-    fn assert_loaded_otherwise_failed(&mut self) {
-        self.0.assert_loaded_otherwise_failed()
-    }
-}
-
-impl<T> Association<T> for OptionHasOne<T> {
-    fn loaded_child(&mut self, child: T) {
-        std::mem::replace(self, OptionHasOne(Some(child)));
-    }
-
-    fn assert_loaded_otherwise_failed(&mut self) {
-        match self.0 {
-            Some(_) => {}
-            None => {
-                std::mem::replace(self, OptionHasOne(None));
-            }
-        }
-    }
-}
-
-impl<T> Association<T> for HasMany<T> {
-    fn loaded_child(&mut self, child: T) {
-        self.0.push(child);
-    }
-
-    fn assert_loaded_otherwise_failed(&mut self) {
-        // cannot fail, defaults to an empty vec
-    }
-}
-
-impl<T> Association<T> for HasManyThrough<T> {
-    fn loaded_child(&mut self, child: T) {
-        self.0.push(child);
-    }
-
-    fn assert_loaded_otherwise_failed(&mut self) {
-        // cannot fail, defaults to an empty vec
     }
 }
 
