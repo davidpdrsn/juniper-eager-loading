@@ -198,19 +198,16 @@ impl FieldArgs {
     pub fn join_model_field(&self) -> TokenStream {
         if let Some(inner) = &self.join_model_field {
             quote! { #inner }
+        } else if let Some(join_model) = &self.join_model {
+            let name = join_model.segments.last().unwrap();
+            let name = &name.ident;
+            let name = name.to_string().to_snake_case();
+            let name = Ident::new(&name, Span::call_site());
+            quote! { #name }
         } else {
-            if let Some(join_model) = &self.join_model {
-                let name = join_model.segments.last().unwrap();
-                let name = name.value();
-                let name = &name.ident;
-                let name = name.to_string().to_snake_case();
-                let name = Ident::new(&name, Span::call_site());
-                quote! { #name }
-            } else {
-                // This method is only used by `HasManyThrough` for which the `model_field` attribute is
-                // mandatory, so it will always be present when needed.
-                quote! { __eager_loading_unreachable }
-            }
+            // This method is only used by `HasManyThrough` for which the `model_field` attribute is
+            // mandatory, so it will always be present when needed.
+            quote! { __eager_loading_unreachable }
         }
     }
 }

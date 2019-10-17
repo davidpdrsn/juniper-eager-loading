@@ -439,6 +439,7 @@
 //! [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
 #![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.3.1")]
+#![allow(clippy::single_match, clippy::type_complexity)]
 #![deny(
     missing_docs,
     dead_code,

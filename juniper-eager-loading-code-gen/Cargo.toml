@@ -13,10 +13,10 @@ repository = "https://github.com/davidpdrsn/juniper-eager-loading.git"
 version = "0.3.1"
 
 [dependencies]
-proc-macro2 = "^0.4"
-quote = "^0.6"
-syn = "^0.15"
-darling = "^0.9"
+proc-macro2 = "1"
+quote = "1"
+syn = "1"
+darling = "^0.10"
 heck = "^0.3"
 
 [lib]
