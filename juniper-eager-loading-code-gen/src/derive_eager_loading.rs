@@ -106,12 +106,15 @@ impl DeriveData {
             #[allow(missing_doc, dead_code)]
             struct #context;
 
-            impl EagerLoadChildrenOfType<
+            impl<'look_ahead, 'query_trail> EagerLoadChildrenOfType<
+                'look_ahead,
+                'query_trail,
                 #inner_type,
                 #context,
                 #join_model_impl,
             > for #struct_name {
                 type ChildId = #child_id;
+                type FieldArguments = ();
 
                 #child_ids_impl
                 #load_children_impl
@@ -497,6 +500,7 @@ impl DeriveData {
                     models,
                     db,
                     &trail,
+                    &(),
                 )?;
             }
         })

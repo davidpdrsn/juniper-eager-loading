@@ -1055,7 +1055,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// [`HasManyThrough`]: struct.HasManyThrough.html
 /// [`LoadFrom`]: trait.LoadFrom.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
-pub trait EagerLoadChildrenOfType<Child, Context, JoinModel = ()>
+pub trait EagerLoadChildrenOfType<'look_ahead, 'query_trail, Child, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
     Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error>
@@ -1067,6 +1067,9 @@ where
     ///
     /// [association types]: /#associations
     type ChildId: Hash + Eq;
+
+    /// TODO
+    type FieldArguments;
 
     /// Given a list of models, load either the list of child ids or child models associated.
     fn child_ids(
@@ -1096,7 +1099,8 @@ where
         nodes: &mut [Self],
         models: &[Self::Model],
         db: &Self::Connection,
-        trail: &QueryTrail<'_, Child, Walked>,
+        trail: &QueryTrail<'look_ahead, Child, Walked>,
+        _field_args: &Self::FieldArguments,
     ) -> Result<(), Self::Error> {
         let child_models = match Self::child_ids(models, db)? {
             LoadResult::Ids(child_ids) => {
