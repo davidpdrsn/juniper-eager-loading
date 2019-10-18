@@ -24,6 +24,10 @@ pub struct DeriveArgs {
     error: syn::Path,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
+
+    // TODO: Document this new attribute
+    #[darling(default)]
+    print: Option<()>,
 }
 
 impl DeriveArgs {
@@ -54,6 +58,10 @@ impl DeriveArgs {
             let struct_name = Ident::new(&struct_name, Span::call_site());
             quote! { #struct_name }
         }
+    }
+
+    pub fn print(&self) -> bool {
+        self.print.is_some()
     }
 }
 

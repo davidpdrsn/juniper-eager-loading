@@ -154,7 +154,7 @@
 ///     type Error = diesel::result::Error;
 ///     type Connection = PgConnection;
 ///
-///     fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+///     fn load(ids: &[i32], field_args: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
 ///         use diesel::pg::expression::dsl::any;
 ///
 ///         users::table
@@ -169,7 +169,7 @@
 ///     type Error = diesel::result::Error;
 ///     type Connection = PgConnection;
 ///
-///     fn load(froms: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+///     fn load(froms: &[User], field_args: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
 ///         use diesel::pg::expression::dsl::any;
 ///
 ///         let from_ids = froms.iter().map(|other| other.id).collect::<Vec<_>>();

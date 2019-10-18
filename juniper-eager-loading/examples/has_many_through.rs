@@ -101,7 +101,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = DbConnection;
 
-        fn load(employments: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(employments: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
         }
     }
@@ -110,7 +110,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = DbConnection;
 
-        fn load(employments: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(employments: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
         }
     }
@@ -119,7 +119,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = DbConnection;
 
-        fn load(employments: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(employments: &[User], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
         }
     }
@@ -128,7 +128,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = DbConnection;
 
-        fn load(employments: &[Company], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(employments: &[Company], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
         }
     }
@@ -139,6 +139,7 @@ mod models {
 
         fn load(
             employments: &[Employment],
+            _: &(),
             db: &Self::Connection,
         ) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()
@@ -151,6 +152,7 @@ mod models {
 
         fn load(
             employments: &[Employment],
+            _: &(),
             db: &Self::Connection,
         ) -> Result<Vec<Self>, Self::Error> {
             unimplemented!()

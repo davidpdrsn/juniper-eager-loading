@@ -7,7 +7,7 @@ use assert_json_diff::{assert_json_eq, assert_json_include};
 use helpers::{SortedExtension, StatsHash};
 use juniper::{Executor, FieldError, FieldResult};
 use juniper_eager_loading::{
-    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
+    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, LoadFrom, OptionHasOne,
 };
 use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
@@ -41,6 +41,9 @@ graphql_schema! {
 }
 
 mod models {
+    use super::*;
+    use either::Either;
+
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct User {
         pub id: i32,
@@ -57,7 +60,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let mut models = db
                 .countries
                 .all_values()
@@ -70,11 +73,40 @@ mod models {
         }
     }
 
+    impl juniper_eager_loading::LoadFrom<i32, CountryUsersArgs<'_, '_>> for User {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(
+            ids: &[i32],
+            field_args: &CountryUsersArgs,
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
+            let models = db
+                .users
+                .all_values()
+                .into_iter()
+                .filter(|value| ids.contains(&value.id));
+
+            let mut models = if field_args.only_admins() {
+                Either::Left(models.filter(|user| user.admin))
+            } else {
+                Either::Right(models)
+            }
+            .cloned()
+            .collect::<Vec<_>>();
+
+            models.sort_by_key(|model| model.id);
+
+            Ok(models)
+        }
+    }
+
     impl juniper_eager_loading::LoadFrom<i32> for User {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let mut models = db
                 .users
                 .all_values()
@@ -91,7 +123,11 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(countries: &[Country], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(
+            countries: &[Country],
+            _: &(),
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
             let country_ids = countries.iter().map(|c| c.id).collect::<Vec<_>>();
             let mut models = db
                 .users
@@ -100,6 +136,37 @@ mod models {
                 .filter(|user| country_ids.contains(&user.country_id))
                 .cloned()
                 .collect::<Vec<_>>();
+            models.sort_by_key(|model| model.id);
+            Ok(models)
+        }
+    }
+
+    impl LoadFrom<Country, CountryUsersArgs<'_, '_>> for User {
+        type Error = Box<dyn std::error::Error>;
+        type Connection = super::Db;
+
+        fn load(
+            countries: &[Country],
+            args: &CountryUsersArgs,
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
+            let only_admins = args.only_admins();
+
+            let country_ids = countries.iter().map(|c| c.id).collect::<Vec<_>>();
+
+            let models = db
+                .users
+                .all_values()
+                .into_iter()
+                .filter(|user| country_ids.contains(&user.country_id));
+
+            let models = if only_admins {
+                Either::Left(models.filter(|user| user.admin))
+            } else {
+                Either::Right(models)
+            };
+
+            let mut models = models.cloned().collect::<Vec<_>>();
             models.sort_by_key(|model| model.id);
             Ok(models)
         }
@@ -151,9 +218,17 @@ impl MutationFields for Mutation {
 }
 
 // The default values are commented out
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
+#[eager_loading(
+    model = "models::User",
+    id = "i32",
+    connection = "Db",
+    error = "Box<dyn std::error::Error>"
+)]
 pub struct User {
     user: models::User,
+
+    #[has_one(default)]
     country: HasOne<Country>,
 }
 
@@ -175,129 +250,18 @@ impl UserFields for User {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
+#[eager_loading(
+    model = "models::Country",
+    id = "i32",
+    connection = "Db",
+    error = "Box<dyn std::error::Error>"
+)]
 pub struct Country {
     country: models::Country,
+
+    #[has_many(skip, root_model_field = "user")]
     users: HasMany<User>,
-}
-
-impl CountryFields for Country {
-    fn field_users(
-        &self,
-        executor: &Executor<'_, Context>,
-        trail: &QueryTrail<'_, User, Walked>,
-        _only_admins: bool,
-    ) -> FieldResult<&Vec<User>> {
-        Ok(self.users.try_unwrap()?)
-    }
-
-    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
-        Ok(&self.country.id)
-    }
-}
-
-impl juniper_eager_loading::GraphqlNodeForModel for User {
-    type Model = models::User;
-    type Id = i32;
-    type Connection = Db;
-    type Error = Box<dyn std::error::Error>;
-    fn new_from_model(model: &Self::Model) -> Self {
-        Self {
-            user: std::clone::Clone::clone(model),
-            country: Default::default(),
-        }
-    }
-}
-
-#[allow(missing_docs, dead_code)]
-struct EagerLoadingContextUserForCountry;
-
-impl<'look_ahead, 'query_trail>
-    EagerLoadChildrenOfType<
-        'look_ahead,
-        'query_trail,
-        Country,
-        EagerLoadingContextUserForCountry,
-        (),
-    > for User
-{
-    type ChildId = <Country as juniper_eager_loading::GraphqlNodeForModel>::Id;
-    type FieldArguments = ();
-
-    fn child_ids(
-        models: &[Self::Model],
-        db: &Self::Connection,
-    ) -> Result<
-        juniper_eager_loading::LoadResult<
-            Self::ChildId,
-            (
-                <Country as juniper_eager_loading::GraphqlNodeForModel>::Model,
-                (),
-            ),
-        >,
-        Self::Error,
-    > {
-        let ids = models
-            .iter()
-            .map(|model| model.country_id.clone())
-            .collect::<Vec<_>>();
-        let ids = juniper_eager_loading::unique(ids);
-        Ok(juniper_eager_loading::LoadResult::Ids(ids))
-    }
-
-    fn load_children(
-        ids: &[Self::ChildId],
-        db: &Self::Connection,
-    ) -> Result<Vec<<Country as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error>
-    {
-        juniper_eager_loading::LoadFrom::load(&ids, db)
-    }
-
-    fn is_child_of(node: &Self, child: &(Country, &())) -> bool {
-        node.user.country_id == (child.0).country.id
-    }
-
-    fn loaded_child(node: &mut Self, child: Country) {
-        node.country.loaded(child)
-    }
-
-    fn assert_loaded_otherwise_failed(node: &mut Self) {
-        node.country.assert_loaded_otherwise_failed();
-    }
-}
-
-impl juniper_eager_loading::EagerLoadAllChildren for User {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        db: &Self::Connection,
-        trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-    ) -> Result<(), Self::Error> {
-        if let Some(trail) = trail.country().walk() {
-            EagerLoadChildrenOfType::<Country, EagerLoadingContextUserForCountry, _>::eager_load_children(
-                nodes,
-                models,
-                db,
-                &trail,
-                &(),
-            )?;
-        }
-        Ok(())
-    }
-}
-
-impl juniper_eager_loading::GraphqlNodeForModel for Country {
-    type Model = models::Country;
-    type Id = i32;
-    type Connection = Db;
-    type Error = Box<dyn std::error::Error>;
-
-    fn new_from_model(model: &Self::Model) -> Self {
-        Self {
-            country: std::clone::Clone::clone(model),
-            users: Default::default(),
-        }
-    }
 }
 
 #[allow(missing_docs, dead_code)]
@@ -314,6 +278,7 @@ impl<'look_ahead: 'query_trail, 'query_trail>
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
+        field_args: &Self::FieldArguments,
     ) -> Result<
         juniper_eager_loading::LoadResult<
             Self::ChildId,
@@ -324,7 +289,7 @@ impl<'look_ahead: 'query_trail, 'query_trail>
         >,
         Self::Error,
     > {
-        let child_models = juniper_eager_loading::LoadFrom::load(&models, db)?;
+        let child_models = juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
         let child_models = child_models.into_iter().map(|child| (child, ())).collect();
         Ok(juniper_eager_loading::LoadResult::Models(child_models))
     }
@@ -332,13 +297,14 @@ impl<'look_ahead: 'query_trail, 'query_trail>
     fn load_children(
         ids: &[Self::ChildId],
         db: &Self::Connection,
+        field_args: &Self::FieldArguments,
     ) -> Result<Vec<<User as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error> {
         let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
         let ids = juniper_eager_loading::unique(ids);
-        juniper_eager_loading::LoadFrom::load(&ids, db)
+        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)
     }
 
-    fn is_child_of(node: &Self, child: &(User, &())) -> bool {
+    fn is_child_of(node: &Self, child: &(User, &()), _field_args: &Self::FieldArguments) -> bool {
         node.country.id == (child.0).user.country_id
     }
 
@@ -351,25 +317,18 @@ impl<'look_ahead: 'query_trail, 'query_trail>
     }
 }
 
-impl juniper_eager_loading::EagerLoadAllChildren for Country {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        db: &Self::Connection,
-        trail: &juniper_from_schema::QueryTrail<'_, Country, juniper_from_schema::Walked>,
-    ) -> Result<(), Self::Error> {
-        if let Some(child_trail) = trail.users().walk() {
-            let args = trail.users_args();
+impl CountryFields for Country {
+    fn field_users(
+        &self,
+        executor: &Executor<'_, Context>,
+        trail: &QueryTrail<'_, User, Walked>,
+        _only_admins: bool,
+    ) -> FieldResult<&Vec<User>> {
+        Ok(self.users.try_unwrap()?)
+    }
 
-            EagerLoadChildrenOfType::<User, EagerLoadingContextCountryForUsers, _>::eager_load_children(
-                nodes,
-                models,
-                db,
-                &child_trail,
-                &args,
-            )?;
-        }
-        Ok(())
+    fn field_id(&self, _executor: &Executor<'_, Context>) -> FieldResult<&i32> {
+        Ok(&self.country.id)
     }
 }
 
@@ -429,11 +388,11 @@ fn loading_user() {
                             "isAdmin": true,
                             "country": { "id": country.id }
                         },
-                        {
-                            "id": alice.id,
-                            "isAdmin": false,
-                            "country": { "id": country.id }
-                        },
+                        // {
+                        //     "id": alice.id,
+                        //     "isAdmin": false,
+                        //     "country": { "id": country.id }
+                        // },
                     ]
                 }
             ],

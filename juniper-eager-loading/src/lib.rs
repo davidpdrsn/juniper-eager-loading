@@ -226,6 +226,7 @@
 //!
 //!         fn load(
 //!             employments: &[i32],
+//!             field_args: &(),
 //!             db: &Self::Connection,
 //!         ) -> Result<Vec<Self>, Self::Error> {
 //!             // ...
@@ -441,7 +442,7 @@
 #![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.3.1")]
 #![allow(clippy::single_match, clippy::type_complexity)]
 #![deny(
-    missing_docs,
+    // missing_docs,
     dead_code,
     missing_copy_implementations,
     missing_debug_implementations,
@@ -846,7 +847,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// # impl juniper_eager_loading::LoadFrom<i32> for models::Country {
 /// #     type Error = Box<dyn std::error::Error>;
 /// #     type Connection = DbConnection;
-/// #     fn load(employments: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+/// #     fn load(employments: &[i32], field_args: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
 /// #         unimplemented!()
 /// #     }
 /// # }
@@ -922,18 +923,22 @@ pub trait GraphqlNodeForModel: Sized {
 /// #[allow(missing_docs, dead_code)]
 /// struct EagerLoadingContextUserForCountry;
 ///
-/// impl
+/// impl<'look_ahead, 'query_trail>
 ///     EagerLoadChildrenOfType<
+///         'look_ahead,
+///         'query_trail,
 ///         Country,
 ///         EagerLoadingContextUserForCountry,
 ///         (),
 ///     > for User
 /// {
 ///     type ChildId = Option<Self::Id>;
+///     type FieldArguments = ();
 ///
 ///     fn child_ids(
 ///         models: &[Self::Model],
 ///         db: &Self::Connection,
+///         field_args: &Self::FieldArguments,
 ///     ) -> Result<
 ///         juniper_eager_loading::LoadResult<
 ///             Self::ChildId,
@@ -952,6 +957,7 @@ pub trait GraphqlNodeForModel: Sized {
 ///     fn load_children(
 ///         ids: &[Self::ChildId],
 ///         db: &Self::Connection,
+///         field_args: &Self::FieldArguments,
 ///     ) -> Result<Vec<<Country as GraphqlNodeForModel>::Model>, Self::Error> {
 ///         let ids = ids
 ///             .into_iter()
@@ -959,12 +965,13 @@ pub trait GraphqlNodeForModel: Sized {
 ///             .cloned()
 ///             .collect::<Vec<_>>();
 ///         let ids = juniper_eager_loading::unique(ids);
-///         <<Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>>::load(
-///             &ids, db,
-///         )
+///         <
+///             <Country as GraphqlNodeForModel>::Model as
+///                 juniper_eager_loading::LoadFrom<Self::Id, Self::FieldArguments>
+///         >::load(&ids, field_args, db)
 ///     }
 ///
-///     fn is_child_of(node: &Self, child: &(Country, &())) -> bool {
+///     fn is_child_of(node: &Self, child: &(Country, &()), field_args: &Self::FieldArguments) -> bool {
 ///         node.user.country_id == Some((child.0).country.id)
 ///     }
 ///
@@ -1055,6 +1062,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// [`HasManyThrough`]: struct.HasManyThrough.html
 /// [`LoadFrom`]: trait.LoadFrom.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
+// `JoinModel` cannot be an associated type because it requires a default.
 pub trait EagerLoadChildrenOfType<'look_ahead, 'query_trail, Child, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
@@ -1068,23 +1076,24 @@ where
     /// [association types]: /#associations
     type ChildId: Hash + Eq;
 
-    /// TODO
     type FieldArguments;
 
     /// Given a list of models, load either the list of child ids or child models associated.
     fn child_ids(
         models: &[Self::Model],
         db: &Self::Connection,
+        field_args: &Self::FieldArguments,
     ) -> Result<LoadResult<Self::ChildId, (Child::Model, JoinModel)>, Self::Error>;
 
     /// Load a list of children from a list of ids.
     fn load_children(
         ids: &[Self::ChildId],
         db: &Self::Connection,
+        field_args: &Self::FieldArguments,
     ) -> Result<Vec<Child::Model>, Self::Error>;
 
     /// Does this parent and this child belong together?
-    fn is_child_of(parent: &Self, child: &(Child, &JoinModel)) -> bool;
+    fn is_child_of(parent: &Self, child: &(Child, &JoinModel), field_args: &Self::FieldArguments) -> bool;
 
     /// Store the loaded child on the association.
     fn loaded_child(node: &mut Self, child: Child);
@@ -1100,13 +1109,13 @@ where
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &QueryTrail<'look_ahead, Child, Walked>,
-        _field_args: &Self::FieldArguments,
+        field_args: &Self::FieldArguments,
     ) -> Result<(), Self::Error> {
-        let child_models = match Self::child_ids(models, db)? {
+        let child_models = match Self::child_ids(models, db, field_args)? {
             LoadResult::Ids(child_ids) => {
                 assert!(same_type::<JoinModel, ()>());
 
-                let loaded_models = Self::load_children(&child_ids, db)?;
+                let loaded_models = Self::load_children(&child_ids, db, field_args)?;
                 loaded_models
                     .into_iter()
                     .map(|model| {
@@ -1161,7 +1170,7 @@ where
         for node in nodes {
             let matching_children = children
                 .iter()
-                .filter(|child_model| Self::is_child_of(node, child_model))
+                .filter(|child_model| Self::is_child_of(node, child_model, field_args))
                 .cloned()
                 .collect::<Vec<_>>();
 
@@ -1252,9 +1261,11 @@ where
 /// If you're using Diesel it is recommend that you use one of [the macros to
 /// generate](index.html#macros) implementations.
 ///
+/// TODO: document Args
+///
 /// [`HasMany`]: struct.HasMany.html
 /// [`HasManyThrough`]: struct.HasManyThrough.html
-pub trait LoadFrom<T>: Sized {
+pub trait LoadFrom<T, Args = ()>: Sized {
     /// The error type. This must match the error set in `#[eager_loading(error_type = _)]`.
     type Error;
 
@@ -1263,7 +1274,7 @@ pub trait LoadFrom<T>: Sized {
     type Connection;
 
     /// Perform the load.
-    fn load(ids: &[T], db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
+    fn load(ids: &[T], args: &Args, db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
 }
 
 /// The kinds of errors that can happen when doing eager loading.

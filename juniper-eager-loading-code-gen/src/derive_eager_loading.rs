@@ -38,8 +38,13 @@ impl DeriveData {
 
     fn build_derive_output(mut self) -> TokenStream {
         self.gen_graphql_node_for_model();
-        self.gen_eager_load_children_of_type();
         self.gen_eager_load_all_children();
+
+        if self.args.print() {
+            println!("{}", self.tokens);
+        }
+
+        self.gen_eager_load_children_of_type();
 
         self.tokens
     }
@@ -103,10 +108,10 @@ impl DeriveData {
         let context = self.field_context_name(&field);
 
         let full_output = quote! {
-            #[allow(missing_doc, dead_code)]
+            #[allow(missing_docs, dead_code)]
             struct #context;
 
-            impl<'look_ahead, 'query_trail> EagerLoadChildrenOfType<
+            impl<'look_ahead: 'query_trail, 'query_trail> EagerLoadChildrenOfType<
                 'look_ahead,
                 'query_trail,
                 #inner_type,
@@ -237,8 +242,8 @@ impl DeriveData {
                     let child_models = <
                         <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                         as
-                        juniper_eager_loading::LoadFrom<Self::Model>
-                    >::load(&models, db)?;
+                        juniper_eager_loading::LoadFrom<Self::Model, Self::FieldArguments>
+                    >::load(&models, field_args, db)?;
 
                     #filter
 
@@ -266,16 +271,16 @@ impl DeriveData {
                     let join_models = <
                         #join_model
                         as
-                        juniper_eager_loading::LoadFrom<Self::Model>
-                    >::load(&models, db)?;
+                        juniper_eager_loading::LoadFrom<Self::Model, Self::FieldArguments>
+                    >::load(&models, field_args, db)?;
 
                     #filter
 
                     let child_models = <
                         <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                         as
-                        juniper_eager_loading::LoadFrom<#join_model>
-                    >::load(&join_models, db)?;
+                        juniper_eager_loading::LoadFrom<#join_model, Self::FieldArguments>
+                    >::load(&join_models, field_args, db)?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -300,8 +305,12 @@ impl DeriveData {
             fn child_ids(
                 models: &[Self::Model],
                 db: &Self::Connection,
+                field_args: &Self::FieldArguments,
             ) -> Result<
-                juniper_eager_loading::LoadResult<Self::ChildId, (<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model, #join_model)>,
+                juniper_eager_loading::LoadResult<
+                    Self::ChildId,
+                    (<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model, #join_model)
+                >,
                 Self::Error,
             > {
                 #child_ids_impl
@@ -320,13 +329,14 @@ impl DeriveData {
             fn load_children(
                 ids: &[Self::ChildId],
                 db: &Self::Connection,
+                field_args: &Self::FieldArguments,
             ) -> Result<Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error> {
                 #normalize_ids
                 <
                     <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
                     as
-                    juniper_eager_loading::LoadFrom<#child_id_type>
-                >::load(&ids, db)
+                    juniper_eager_loading::LoadFrom<#child_id_type, Self::FieldArguments>
+                >::load(&ids, field_args, db)
             }
         }
     }
@@ -400,7 +410,7 @@ impl DeriveData {
         };
 
         quote! {
-            fn is_child_of(node: &Self, child: &(#inner_type, &#join_model)) -> bool {
+            fn is_child_of(node: &Self, child: &(#inner_type, &#join_model), _: &Self::FieldArguments) -> bool {
                 #is_child_of_impl
             }
         }
@@ -490,17 +500,20 @@ impl DeriveData {
                     panic!("Found `juniper_eager_loading::HasOne` field without a name")
                 })
             });
+        let field_args_name = quote::format_ident!("{}_args", field_name);
 
         let context = self.field_context_name(&field);
 
         Some(quote! {
-            if let Some(trail) = trail.#field_name().walk() {
+            if let Some(child_trail) = trail.#field_name().walk() {
+                let field_args = trail.#field_args_name();
+
                 EagerLoadChildrenOfType::<#inner_type, #context, _>::eager_load_children(
                     nodes,
                     models,
                     db,
-                    &trail,
-                    &(),
+                    &child_trail,
+                    &field_args,
                 )?;
             }
         })

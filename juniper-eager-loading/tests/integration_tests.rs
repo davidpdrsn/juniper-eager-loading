@@ -117,7 +117,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let countries = db
                 .countries
                 .all_values()
@@ -133,7 +133,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let countries = db
                 .cities
                 .all_values()
@@ -149,7 +149,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .users
                 .all_values()
@@ -165,7 +165,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .companies
                 .all_values()
@@ -181,7 +181,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .employments
                 .all_values()
@@ -197,7 +197,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .issues
                 .all_values()
@@ -213,7 +213,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(countries: &[Country], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(countries: &[Country], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let country_ids = countries
                 .iter()
                 .map(|country| country.id)
@@ -233,7 +233,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(users: &[User], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let user_ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
             let employments = db
                 .employments
@@ -252,6 +252,7 @@ mod models {
 
         fn load(
             employments: &[Employment],
+            _: &(),
             db: &Self::Connection,
         ) -> Result<Vec<Self>, Self::Error> {
             let company_ids = employments
@@ -275,7 +276,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(users: &[User], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(users: &[User], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let user_ids = users.iter().map(|user| Some(user.id)).collect::<Vec<_>>();
             let issues = db
                 .issues

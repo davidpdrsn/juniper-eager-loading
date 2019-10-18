@@ -66,7 +66,7 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .countries
                 .all_values()
