@@ -6,21 +6,12 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-### Added
+- Move `impl_load_from_for_diesel_{pg|mysql|sqlite}!` to proc-macros. Are fully backwards compatible but will give better errors.
+- Tweak docs for `impl_load_from_for_diesel_{pg|mysql|sqlite}!`.
 
-N/A
+### Breaking changes
 
-### Changed
-
-N/A
-
-### Removed
-
-N/A
-
-### Fixed
-
-N/A
+None.
 
 ## [0.3.1] - 2019-10-09
 
