@@ -1303,3 +1303,13 @@ pub fn unique<T: Hash + Eq>(items: Vec<T>) -> Vec<T> {
         .into_iter()
         .collect::<Vec<_>>()
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn ui() {
+        let t = trybuild::TestCases::new();
+        t.pass("tests/compile_pass/*.rs");
+        // t.compile_fail("tests/compile_fail/*.rs");
+    }
+}

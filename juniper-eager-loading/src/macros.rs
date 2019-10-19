@@ -182,90 +182,17 @@
 /// ```
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_pg {
-    (
-        (
-            error = $error:path,
-            connection = $connection:path,
-        ) => {
-            $($inner:tt)*
-        }
-    ) => {
-        $crate::__impl_load_from_for_diesel_inner_pg! {
-            error = $error,
-            connection = $connection,
-            $( $inner )*
-        }
+    ( $($token:tt)* ) => {
+        juniper_eager_loading_code_gen::impl_load_from_for_diesel_pg!($($token)*);
     }
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __impl_load_from_for_diesel_inner_pg {
-    (
-        error = $error:path,
-        connection = $connection:path,
-    ) => {};
-
-    (
-        error = $error:path,
-        connection = $connection:path,
-        $id_ty:ident -> ($table:ident, $ty:ident),
-        $( $rest:tt )*
-    ) => {
-        impl juniper_eager_loading::LoadFrom<$id_ty> for $ty {
-            type Error = $error;
-            type Connection = $connection;
-
-            fn load(
-                ids: &[$id_ty],
-                db: &Self::Connection,
-            ) -> Result<Vec<Self>, Self::Error> {
-                $table::table
-                    .filter($table::id.eq(diesel::pg::expression::dsl::any(ids)))
-                    .load::<$ty>(db)
-                    .map_err(From::from)
-            }
-        }
-
-        $crate::__impl_load_from_for_diesel_inner_pg! {
-            error = $error,
-            connection = $connection,
-            $($rest)*
-        }
-    };
-
-    (
-        error = $error:path,
-        connection = $connection:path,
-        $join_ty:ident . $join_from:ident -> ($table:ident . $join_to:ident, $ty:ident),
-        $( $rest:tt )*
-    ) => {
-        impl juniper_eager_loading::LoadFrom<$join_ty> for $ty {
-            type Error = $error;
-            type Connection = $connection;
-
-            fn load(
-                froms: &[$join_ty],
-                db: &Self::Connection,
-            ) -> Result<Vec<Self>, Self::Error> {
-                let from_ids = froms.iter().map(|other| other.$join_from).collect::<Vec<_>>();
-                $table::table
-                    .filter($table::$join_to.eq(diesel::pg::expression::dsl::any(from_ids)))
-                    .load(db)
-                    .map_err(From::from)
-            }
-        }
-
-        $crate::__impl_load_from_for_diesel_inner_pg! {
-            error = $error,
-            connection = $connection,
-            $($rest)*
-        }
-    };
-}
-
-/// Same as [`impl_load_from_for_diesel_pg`](macro.impl_load_from_for_diesel_pg.html) for but
-/// MySQL.
+/// This macro will implement [`LoadFrom`][] for Diesel models using the MySQL backend.
+///
+/// For more details see [`impl_load_from_for_diesel_pg`][].
+///
+/// [`impl_load_from_for_diesel_pg`]: macro.impl_load_from_for_diesel_pg.html
+/// [`LoadFrom`]: trait.LoadFrom.html
 ///
 /// # Example usage
 ///
@@ -335,90 +262,17 @@ macro_rules! __impl_load_from_for_diesel_inner_pg {
 /// ```
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_mysql {
-    (
-        (
-            error = $error:path,
-            connection = $connection:path,
-        ) => {
-            $($inner:tt)*
-        }
-    ) => {
-        $crate::__impl_load_from_for_diesel_inner_mysql! {
-            error = $error,
-            connection = $connection,
-            $( $inner )*
-        }
+    ( $($token:tt)* ) => {
+        juniper_eager_loading_code_gen::impl_load_from_for_diesel_mysql!($($token)*);
     }
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __impl_load_from_for_diesel_inner_mysql {
-    (
-        error = $error:path,
-        connection = $connection:path,
-    ) => {};
-
-    (
-        error = $error:path,
-        connection = $connection:path,
-        $id_ty:ident -> ($table:ident, $ty:ident),
-        $( $rest:tt )*
-    ) => {
-        impl juniper_eager_loading::LoadFrom<$id_ty> for $ty {
-            type Error = $error;
-            type Connection = $connection;
-
-            fn load(
-                ids: &[$id_ty],
-                db: &Self::Connection,
-            ) -> Result<Vec<Self>, Self::Error> {
-                $table::table
-                    .filter($table::id.eq_any(ids))
-                    .load::<$ty>(db)
-                    .map_err(From::from)
-            }
-        }
-
-        $crate::__impl_load_from_for_diesel_inner_mysql! {
-            error = $error,
-            connection = $connection,
-            $($rest)*
-        }
-    };
-
-    (
-        error = $error:path,
-        connection = $connection:path,
-        $join_ty:ident . $join_from:ident -> ($table:ident . $join_to:ident, $ty:ident),
-        $( $rest:tt )*
-    ) => {
-        impl juniper_eager_loading::LoadFrom<$join_ty> for $ty {
-            type Error = $error;
-            type Connection = $connection;
-
-            fn load(
-                froms: &[$join_ty],
-                db: &Self::Connection,
-            ) -> Result<Vec<Self>, Self::Error> {
-                let from_ids = froms.iter().map(|other| other.$join_from).collect::<Vec<_>>();
-                $table::table
-                    .filter($table::$join_to.eq_any(from_ids))
-                    .load(db)
-                    .map_err(From::from)
-            }
-        }
-
-        $crate::__impl_load_from_for_diesel_inner_mysql! {
-            error = $error,
-            connection = $connection,
-            $($rest)*
-        }
-    };
-}
-
-/// Same as [`impl_load_from_for_diesel_pg`](macro.impl_load_from_for_diesel_pg.html) for but
-/// SQLite.
+/// This macro will implement [`LoadFrom`][] for Diesel models using the SQLite backend.
+///
+/// For more details see [`impl_load_from_for_diesel_pg`][].
+///
+/// [`impl_load_from_for_diesel_pg`]: macro.impl_load_from_for_diesel_pg.html
+/// [`LoadFrom`]: trait.LoadFrom.html
 ///
 /// # Example usage
 ///
@@ -489,7 +343,7 @@ macro_rules! __impl_load_from_for_diesel_inner_mysql {
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_sqlite {
     ( $($token:tt)* ) => {
-        $crate::impl_load_from_for_diesel_mysql! { $($token)* }
+        juniper_eager_loading_code_gen::impl_load_from_for_diesel_sqlite!($($token)*);
     }
 }
 
