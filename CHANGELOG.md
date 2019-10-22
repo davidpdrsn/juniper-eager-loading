@@ -8,6 +8,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 - Move `impl_load_from_for_diesel_{pg|mysql|sqlite}!` to proc-macros. Are fully backwards compatible but will give better errors.
 - Tweak docs for `impl_load_from_for_diesel_{pg|mysql|sqlite}!`.
+- `Association` trait has been added to abstraction over `HasOne`, `OptionHasOne`, `HasMany`, and `HasManyThrough` associations.
 
 ### Breaking changes
 
@@ -18,6 +19,8 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
     - `LoadResult::Models` has been renamed to `LoadChildrenOutput::ChildAndJoinModels` for the same reason.
     - The second type parameter (used for the join model) now defaults to `()`.
 - The signature of `EagerLoadChildrenOfType::is_child_of` has been changed to `parent: &Self, child: &Child, join_model: &JoinModel`. Manually pulling things out of the tuple was tedious.
+- `EagerLoadChildrenOfType::association` has been added. This methods allows for some boilerplate to be removed from `EagerLoadChildrenOfType`.
+- `EagerLoadChildrenOfType::loaded_child` and `EagerLoadChildrenOfType::assert_loaded_otherwise_failed` has been removed and implemented generically using the new `Association` trait.
 
 If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
 
