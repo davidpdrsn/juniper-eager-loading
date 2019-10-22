@@ -11,7 +11,15 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Breaking changes
 
-None.
+- `EagerLoadChildrenOfType::child_ids` has been removed. Use `EagerLoadChildrenOfType::load_children` instead. See [#27](https://github.com/davidpdrsn/juniper-eager-loading/issues/27) for more context.
+- `EagerLoadChildrenOfType::ChildId` has been removed. It was only used by `child_ids` and was therefore no longer necessary.
+- `LoadResult` has been renamed to `LoadChildrenOutput`. Including `Result` in the name made it seem like it might related to errors, which it wasn't.
+    - `LoadResult::Ids` has been renamed to `LoadChildrenOutput::ChildModel` to match the changes to `EagerLoadChildrenOfType::load_children`.
+    - `LoadResult::Models` has been renamed to `LoadChildrenOutput::ChildAndJoinModels` for the same reason.
+    - The second type parameter (used for the join model) now defaults to `()`.
+- The signature of `EagerLoadChildrenOfType::is_child_of` has been changed to `parent: &Self, child: &Child, join_model: &JoinModel`. Manually pulling things out of the tuple was tedious.
+
+If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
 
 ## [0.3.1] - 2019-10-09
 
