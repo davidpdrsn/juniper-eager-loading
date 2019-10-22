@@ -209,27 +209,30 @@ impl DeriveData {
         };
 
         let load_children_impl = match data.association_type {
-            HasOne | OptionHasOne => {
-                let normalize_ids = match data.association_type {
-                    OptionHasOne => {
-                        quote! {
-                            let ids = ids
-                                .into_iter()
-                                .filter_map(|id| id)
-                                .map(|id| id.clone())
-                                .collect::<Vec<_>>();
-                        }
-                    }
-                    HasOne | HasMany | HasManyThrough => quote! {},
-                };
-
-                // TODO: skip creating two vecs for OptionHasOne
+            HasOne => {
                 quote! {
                     let ids = models
                         .iter()
                         .map(|model| model.#foreign_key_field.clone())
                         .collect::<Vec<_>>();
-                    #normalize_ids
+                    let ids = juniper_eager_loading::unique(ids);
+
+                    let child_models = <
+                        <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
+                        as
+                        juniper_eager_loading::LoadFrom<#child_id_type>
+                    >::load(&ids, db)?;
+
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
+                }
+            }
+            OptionHasOne => {
+                quote! {
+                    let ids = models
+                        .iter()
+                        .filter_map(|model| model.#foreign_key_field)
+                        .map(|id| id.clone())
+                        .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models = <
