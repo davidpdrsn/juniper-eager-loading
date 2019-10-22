@@ -260,7 +260,7 @@ impl UserFields for User {
 pub struct Country {
     country: models::Country,
 
-    #[has_many(skip, root_model_field = "user")]
+    #[has_many(skip)]
     users: HasMany<User>,
 }
 

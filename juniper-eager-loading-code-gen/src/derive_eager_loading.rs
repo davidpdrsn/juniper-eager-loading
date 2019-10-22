@@ -41,7 +41,7 @@ impl DeriveData {
         self.gen_eager_load_all_children();
 
         if self.args.print() {
-            println!("{}", self.tokens);
+            eprintln!("{}", self.tokens);
         }
 
         self.gen_eager_load_children_of_type();
@@ -60,7 +60,7 @@ impl DeriveData {
             let ident = &field.ident;
 
             if is_association_field(&field.ty) {
-                quote! { #ident: Default::default() }
+                quote! { #ident: std::default::Default::default() }
             } else {
                 quote! { #ident: std::clone::Clone::clone(model) }
             }
@@ -111,7 +111,7 @@ impl DeriveData {
             #[allow(missing_docs, dead_code)]
             struct #context;
 
-            impl<'look_ahead: 'query_trail, 'query_trail> EagerLoadChildrenOfType<
+            impl<'look_ahead: 'query_trail, 'query_trail> juniper_eager_loading::EagerLoadChildrenOfType<
                 'look_ahead,
                 'query_trail,
                 #inner_type,
@@ -130,7 +130,7 @@ impl DeriveData {
         };
 
         if args.print {
-            println!("{}", full_output);
+            eprintln!("{}", full_output);
         }
 
         if args.skip {
