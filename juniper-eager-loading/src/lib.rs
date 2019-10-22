@@ -926,46 +926,31 @@ pub trait GraphqlNodeForModel: Sized {
 ///     EagerLoadChildrenOfType<
 ///         Country,
 ///         EagerLoadingContextUserForCountry,
-///         (),
 ///     > for User
 /// {
-///     type ChildId = Option<Self::Id>;
-///
-///     fn child_ids(
+///     fn load_children(
 ///         models: &[Self::Model],
 ///         db: &Self::Connection,
 ///     ) -> Result<
-///         juniper_eager_loading::LoadResult<
-///             Self::ChildId,
-///             (<Country as GraphqlNodeForModel>::Model, ()),
-///         >,
+///         LoadChildrenOutput<<Country as juniper_eager_loading::GraphqlNodeForModel>::Model>,
 ///         Self::Error,
 ///     > {
 ///         let ids = models
 ///             .iter()
-///             .map(|model| model.country_id.clone())
+///             .filter_map(|model| model.country_id)
+///             .map(|id| id.clone())
 ///             .collect::<Vec<_>>();
 ///         let ids = juniper_eager_loading::unique(ids);
-///         Ok(juniper_eager_loading::LoadResult::Ids(ids))
+///
+///         let children = <
+///             <Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>
+///         >::load(&ids, db)?;
+///
+///         Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(children))
 ///     }
 ///
-///     fn load_children(
-///         ids: &[Self::ChildId],
-///         db: &Self::Connection,
-///     ) -> Result<Vec<<Country as GraphqlNodeForModel>::Model>, Self::Error> {
-///         let ids = ids
-///             .into_iter()
-///             .filter_map(|id| id.as_ref())
-///             .cloned()
-///             .collect::<Vec<_>>();
-///         let ids = juniper_eager_loading::unique(ids);
-///         <<Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>>::load(
-///             &ids, db,
-///         )
-///     }
-///
-///     fn is_child_of(node: &Self, child: &(Country, &())) -> bool {
-///         node.user.country_id == Some((child.0).country.id)
+///     fn is_child_of(node: &Self, child: &Country, _join_model: &()) -> bool {
+///         node.user.country_id == Some(child.country.id)
 ///     }
 ///
 ///     fn loaded_child(node: &mut Self, child: Country) {
@@ -987,19 +972,6 @@ pub trait GraphqlNodeForModel: Sized {
 ///
 /// If model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
 /// this type will default to `models::Country`.
-///
-/// ## `QueryTrailT`
-///
-/// Since [we cannot depend directly](trait.GenericQueryTrail.html) on [`QueryTrail`][] we have to
-/// depend on this generic version instead.
-///
-/// The generic constraint enforces that [`.walk()`][] must to have been called on the `QueryTrail` to
-/// ensure the field we're trying to eager load is actually part of the incoming GraphQL query.
-/// Otherwise the field will not be eager loaded. This is how the compiler can guarantee that we
-/// don't eager load too much.
-///
-/// [`QueryTrail`]: https://docs.rs/juniper-from-schema/#query-trails
-/// [`.walk()`]: https://docs.rs/juniper-from-schema/#k
 ///
 /// ## `Context`
 ///
@@ -1063,25 +1035,16 @@ where
         + Clone,
     JoinModel: 'static + Clone + ?Sized,
 {
-    /// The id type the child uses. This will be different for the different [association types][].
-    ///
-    /// [association types]: /#associations
-    type ChildId: Hash + Eq;
-
-    /// Given a list of models, load either the list of child ids or child models associated.
-    fn child_ids(
-        models: &[Self::Model],
-        db: &Self::Connection,
-    ) -> Result<LoadResult<Self::ChildId, (Child::Model, JoinModel)>, Self::Error>;
-
     /// Load a list of children from a list of ids.
     fn load_children(
-        ids: &[Self::ChildId],
+        models: &[Self::Model],
         db: &Self::Connection,
-    ) -> Result<Vec<Child::Model>, Self::Error>;
+    ) -> Result<LoadChildrenOutput<Child::Model, JoinModel>, Self::Error>;
 
     /// Does this parent and this child belong together?
-    fn is_child_of(parent: &Self, child: &(Child, &JoinModel)) -> bool;
+    ///
+    /// The `join_model` is only used for `HasManyThrough` associations.
+    fn is_child_of(parent: &Self, child: &Child, join_model: &JoinModel) -> bool;
 
     /// Store the loaded child on the association.
     fn loaded_child(node: &mut Self, child: Child);
@@ -1098,12 +1061,11 @@ where
         db: &Self::Connection,
         trail: &QueryTrail<'_, Child, Walked>,
     ) -> Result<(), Self::Error> {
-        let child_models = match Self::child_ids(models, db)? {
-            LoadResult::Ids(child_ids) => {
+        let child_models = match Self::load_children(models, db)? {
+            LoadChildrenOutput::ChildModels(child_models) => {
                 assert!(same_type::<JoinModel, ()>());
 
-                let loaded_models = Self::load_children(&child_ids, db)?;
-                loaded_models
+                child_models
                     .into_iter()
                     .map(|model| {
                         #[allow(unsafe_code)]
@@ -1112,7 +1074,7 @@ where
                             // happens for all the `Has*` types except `HasManyThrough`.
                             //
                             // `HasManyThrough` requires something to join the two types on,
-                            // therefore `child_ids` will return a variant of `LoadResult::Models`
+                            // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
                             std::mem::transmute_copy::<(), JoinModel>(&())
                         };
 
@@ -1120,7 +1082,7 @@ where
                     })
                     .collect::<Vec<_>>()
             }
-            LoadResult::Models(model_and_join_pairs) => model_and_join_pairs,
+            LoadChildrenOutput::ChildAndJoinModels(model_and_join_pairs) => model_and_join_pairs,
         };
 
         let children = child_models
@@ -1157,7 +1119,7 @@ where
         for node in nodes {
             let matching_children = children
                 .iter()
-                .filter(|child_model| Self::is_child_of(node, child_model))
+                .filter(|child_model| Self::is_child_of(node, &child_model.0, &child_model.1))
                 .cloned()
                 .collect::<Vec<_>>();
 
@@ -1178,11 +1140,12 @@ fn same_type<A: 'static, B: 'static>() -> bool {
     TypeId::of::<A>() == TypeId::of::<B>()
 }
 
-/// The result of loading child ids.
+/// The result of loading child models.
 ///
-/// [`HasOne`][] and [`OptionHasOne`][] can return the child ids because the model has the foreign
-/// key. However for [`HasMany`][] and [`HasManyThrough`][] the model itself doesn't have the
-/// foreign key, the join models do. So we have the return those instead.
+/// [`HasOne`][], [`OptionHasOne`][], [`HasMany`][] can return the child models directly because
+/// the model has the foreign key. However for [`HasManyThrough`][] neither the parent or child
+/// model has any of the foreign keys. Only the join model does. So we have to include those in the
+/// result.
 ///
 /// Unless you're customizing [`EagerLoadChildrenOfType`] you shouldn't have to worry about this.
 ///
@@ -1192,12 +1155,12 @@ fn same_type<A: 'static, B: 'static>() -> bool {
 /// [`HasManyThrough`]: struct.HasManyThrough.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 #[derive(Debug)]
-pub enum LoadResult<A, B> {
-    /// Ids where loaded.
-    Ids(Vec<A>),
+pub enum LoadChildrenOutput<ChildModel, JoinModel = ()> {
+    /// Child models were loaded.
+    ChildModels(Vec<ChildModel>),
 
-    /// Models were loaded.
-    Models(Vec<B>),
+    /// Child models along with the respective join model was loaded.
+    ChildAndJoinModels(Vec<(ChildModel, JoinModel)>),
 }
 
 /// The main entry point trait for doing eager loading.
@@ -1310,6 +1273,8 @@ mod test {
     fn ui() {
         let t = trybuild::TestCases::new();
         t.pass("tests/compile_pass/*.rs");
+
+        // We currently don't have any compile tests that should fail to build
         // t.compile_fail("tests/compile_fail/*.rs");
     }
 }
