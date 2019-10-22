@@ -95,9 +95,8 @@ impl DeriveData {
         let struct_name = self.struct_name();
         let join_model_impl = self.join_model_impl(&data);
         let load_children_impl = self.load_children_impl(&data);
+        let association_impl = self.association_impl(&data);
         let is_child_of_impl = self.is_child_of_impl(&data);
-        let loaded_or_failed_child_impl = self.loaded_or_failed_child_impl(&data);
-        let assert_loaded_otherwise_failed_impl = self.assert_loaded_otherwise_failed_impl(&data);
 
         let context = self.field_context_name(&field);
 
@@ -112,8 +111,7 @@ impl DeriveData {
             > for #struct_name {
                 #load_children_impl
                 #is_child_of_impl
-                #loaded_or_failed_child_impl
-                #assert_loaded_otherwise_failed_impl
+                #association_impl
             }
         };
 
@@ -378,23 +376,15 @@ impl DeriveData {
         }
     }
 
-    fn loaded_or_failed_child_impl(&self, data: &FieldDeriveData) -> TokenStream {
+    fn association_impl(&self, data: &FieldDeriveData) -> TokenStream {
         let field_name = &data.field_name;
         let inner_type = &data.inner_type;
 
         quote! {
-            fn loaded_child(node: &mut Self, child: #inner_type) {
-                node.#field_name.loaded(child)
-            }
-        }
-    }
-
-    fn assert_loaded_otherwise_failed_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        let field_name = &data.field_name;
-
-        quote! {
-            fn assert_loaded_otherwise_failed(node: &mut Self) {
-                node.#field_name.assert_loaded_otherwise_failed();
+            fn association(node: &mut Self) ->
+                &mut dyn juniper_eager_loading::Association<#inner_type>
+            {
+                &mut node.#field_name
             }
         }
     }

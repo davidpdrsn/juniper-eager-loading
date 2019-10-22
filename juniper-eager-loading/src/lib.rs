@@ -465,6 +465,7 @@ pub use juniper_eager_loading_code_gen::EagerLoading;
 
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
 pub mod prelude {
+    pub use super::Association;
     pub use super::EagerLoadAllChildren;
     pub use super::EagerLoadChildrenOfType;
     pub use super::GraphqlNodeForModel;
@@ -544,19 +545,6 @@ impl<T> HasOne<T> {
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         self.0.try_unwrap()
     }
-
-    /// Set the given value as the loaded value.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.loaded(inner)
-    }
-
-    /// Check that a loaded value is present otherwise set `self` to an error state after which
-    /// [`try_unwrap`][] will return an error.
-    ///
-    /// [`try_unwrap`]: struct.HasOne.html#method.try_unwrap
-    pub fn assert_loaded_otherwise_failed(&mut self) {
-        self.0.assert_loaded_otherwise_failed()
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -631,21 +619,6 @@ impl<T> OptionHasOne<T> {
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Set the given value as the loaded value.
-    pub fn loaded(&mut self, inner: T) {
-        std::mem::replace(self, OptionHasOne(Some(inner)));
-    }
-
-    /// Check that a loaded value is present otherwise set `self` to `None`.
-    pub fn assert_loaded_otherwise_failed(&mut self) {
-        match self.0 {
-            Some(_) => {}
-            None => {
-                std::mem::replace(self, OptionHasOne(None));
-            }
-        }
-    }
 }
 
 /// A "has many" association.
@@ -703,15 +676,6 @@ impl<T> HasMany<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Add the loaded value to the list.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.push(inner);
-    }
-
-    /// This function doesn't do anything since the default is an empty list and there is no error
-    /// state.
-    pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
 /// A "has many through" association.
@@ -779,15 +743,6 @@ impl<T> HasManyThrough<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Add the loaded value to the list.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.push(inner);
-    }
-
-    /// This function doesn't do anything since the default is an empty list and there is no error
-    /// state.
-    pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
 /// A GraphQL type backed by a model object.
@@ -953,12 +908,8 @@ pub trait GraphqlNodeForModel: Sized {
 ///         node.user.country_id == Some(child.country.id)
 ///     }
 ///
-///     fn loaded_child(node: &mut Self, child: Country) {
-///         node.country.loaded(child)
-///     }
-///
-///     fn assert_loaded_otherwise_failed(node: &mut Self) {
-///         node.country.assert_loaded_otherwise_failed();
+///     fn association(node: &mut Self) -> &mut dyn Association<Country> {
+///         &mut node.country
 ///     }
 /// }
 /// ```
@@ -970,7 +921,7 @@ pub trait GraphqlNodeForModel: Sized {
 ///
 /// ## `Child`
 ///
-/// If model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
+/// Is the model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
 /// this type will default to `models::Country`.
 ///
 /// ## `Context`
@@ -1035,7 +986,7 @@ where
         + Clone,
     JoinModel: 'static + Clone + ?Sized,
 {
-    /// Load a list of children from a list of ids.
+    /// Load a list of children from a list of models.
     fn load_children(
         models: &[Self::Model],
         db: &Self::Connection,
@@ -1046,12 +997,16 @@ where
     /// The `join_model` is only used for `HasManyThrough` associations.
     fn is_child_of(parent: &Self, child: &Child, join_model: &JoinModel) -> bool;
 
-    /// Store the loaded child on the association.
-    fn loaded_child(node: &mut Self, child: Child);
-
-    /// The association should have been loaded by now, if not store an error inside the
-    /// association (if applicable for the particular association).
-    fn assert_loaded_otherwise_failed(node: &mut Self);
+    /// Return the particular association type.
+    ///
+    /// In most cases the implementation will be something like
+    ///
+    /// ```ignore
+    /// fn association(node: &mut User) -> &mut dyn Association<Country> {
+    ///     &mut node.country
+    /// }
+    /// ```
+    fn association(node: &mut Self) -> &mut dyn Association<Child>;
 
     /// Combine all the methods above to eager load the children for a list of GraphQL values and
     /// models.
@@ -1124,13 +1079,68 @@ where
                 .collect::<Vec<_>>();
 
             for child in matching_children {
-                Self::loaded_child(node, child.0);
+                Self::association(node).loaded_child(child.0);
             }
 
-            Self::assert_loaded_otherwise_failed(node);
+            Self::association(node).assert_loaded_otherwise_failed();
         }
 
         Ok(())
+    }
+}
+
+/// Methods available for all association types.
+pub trait Association<T> {
+    /// Store the loaded child on the association.
+    fn loaded_child(&mut self, child: T);
+
+    /// The association should have been loaded by now, if not store an error inside the
+    /// association (if applicable for the particular association).
+    fn assert_loaded_otherwise_failed(&mut self);
+}
+
+impl<T> Association<T> for HasOne<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.loaded(child)
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        self.0.assert_loaded_otherwise_failed()
+    }
+}
+
+impl<T> Association<T> for OptionHasOne<T> {
+    fn loaded_child(&mut self, child: T) {
+        std::mem::replace(self, OptionHasOne(Some(child)));
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        match self.0 {
+            Some(_) => {}
+            None => {
+                std::mem::replace(self, OptionHasOne(None));
+            }
+        }
+    }
+}
+
+impl<T> Association<T> for HasMany<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.push(child);
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        // cannot fail, defaults to an empty vec
+    }
+}
+
+impl<T> Association<T> for HasManyThrough<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.push(child);
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        // cannot fail, defaults to an empty vec
     }
 }
 
