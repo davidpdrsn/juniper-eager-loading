@@ -179,6 +179,7 @@ impl HasOne {
 
                 fn load(
                     ids: &[#id_ty],
+                    _field_args: &(),
                     db: &Self::Connection,
                 ) -> Result<Vec<Self>, Self::Error> {
                     #table::table
@@ -222,6 +223,7 @@ impl HasMany {
 
                 fn load(
                     froms: &[#join_ty],
+                    _field_args: &(),
                     db: &Self::Connection,
                 ) -> Result<Vec<Self>, Self::Error> {
                     let from_ids = froms
