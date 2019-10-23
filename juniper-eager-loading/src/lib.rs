@@ -466,6 +466,7 @@ pub use juniper_eager_loading_code_gen::EagerLoading;
 
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
 pub mod prelude {
+    pub use super::Association;
     pub use super::EagerLoadAllChildren;
     pub use super::EagerLoadChildrenOfType;
     pub use super::GraphqlNodeForModel;
@@ -545,19 +546,6 @@ impl<T> HasOne<T> {
     pub fn try_unwrap(&self) -> Result<&T, Error> {
         self.0.try_unwrap()
     }
-
-    /// Set the given value as the loaded value.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.loaded(inner)
-    }
-
-    /// Check that a loaded value is present otherwise set `self` to an error state after which
-    /// [`try_unwrap`][] will return an error.
-    ///
-    /// [`try_unwrap`]: struct.HasOne.html#method.try_unwrap
-    pub fn assert_loaded_otherwise_failed(&mut self) {
-        self.0.assert_loaded_otherwise_failed()
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -632,21 +620,6 @@ impl<T> OptionHasOne<T> {
     pub fn try_unwrap(&self) -> Result<&Option<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Set the given value as the loaded value.
-    pub fn loaded(&mut self, inner: T) {
-        std::mem::replace(self, OptionHasOne(Some(inner)));
-    }
-
-    /// Check that a loaded value is present otherwise set `self` to `None`.
-    pub fn assert_loaded_otherwise_failed(&mut self) {
-        match self.0 {
-            Some(_) => {}
-            None => {
-                std::mem::replace(self, OptionHasOne(None));
-            }
-        }
-    }
 }
 
 /// A "has many" association.
@@ -704,15 +677,6 @@ impl<T> HasMany<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Add the loaded value to the list.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.push(inner);
-    }
-
-    /// This function doesn't do anything since the default is an empty list and there is no error
-    /// state.
-    pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
 /// A "has many through" association.
@@ -780,15 +744,6 @@ impl<T> HasManyThrough<T> {
     pub fn try_unwrap(&self) -> Result<&Vec<T>, Error> {
         Ok(&self.0)
     }
-
-    /// Add the loaded value to the list.
-    pub fn loaded(&mut self, inner: T) {
-        self.0.push(inner);
-    }
-
-    /// This function doesn't do anything since the default is an empty list and there is no error
-    /// state.
-    pub fn assert_loaded_otherwise_failed(&mut self) {}
 }
 
 /// A GraphQL type backed by a model object.
@@ -929,58 +884,42 @@ pub trait GraphqlNodeForModel: Sized {
 ///         'query_trail,
 ///         Country,
 ///         EagerLoadingContextUserForCountry,
-///         (),
 ///     > for User
 /// {
-///     type ChildId = Option<Self::Id>;
 ///     type FieldArguments = ();
 ///
-///     fn child_ids(
+///     fn load_children(
 ///         models: &[Self::Model],
-///         db: &Self::Connection,
 ///         field_args: &Self::FieldArguments,
+///         db: &Self::Connection,
 ///     ) -> Result<
-///         juniper_eager_loading::LoadResult<
-///             Self::ChildId,
-///             (<Country as GraphqlNodeForModel>::Model, ()),
-///         >,
+///         LoadChildrenOutput<<Country as juniper_eager_loading::GraphqlNodeForModel>::Model>,
 ///         Self::Error,
 ///     > {
 ///         let ids = models
 ///             .iter()
-///             .map(|model| model.country_id.clone())
+///             .filter_map(|model| model.country_id)
+///             .map(|id| id.clone())
 ///             .collect::<Vec<_>>();
 ///         let ids = juniper_eager_loading::unique(ids);
-///         Ok(juniper_eager_loading::LoadResult::Ids(ids))
+///
+///         let children = <
+///             <Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>
+///         >::load(&ids, field_args, db)?;
+///
+///         Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(children))
 ///     }
 ///
-///     fn load_children(
-///         ids: &[Self::ChildId],
-///         db: &Self::Connection,
-///         field_args: &Self::FieldArguments,
-///     ) -> Result<Vec<<Country as GraphqlNodeForModel>::Model>, Self::Error> {
-///         let ids = ids
-///             .into_iter()
-///             .filter_map(|id| id.as_ref())
-///             .cloned()
-///             .collect::<Vec<_>>();
-///         let ids = juniper_eager_loading::unique(ids);
-///         <
-///             <Country as GraphqlNodeForModel>::Model as
-///                 juniper_eager_loading::LoadFrom<Self::Id, Self::FieldArguments>
-///         >::load(&ids, field_args, db)
+///     fn is_child_of(
+///         node: &Self,
+///         child: &Country,
+///         _join_model: &(), _field_args: &Self::FieldArguments,
+///     ) -> bool {
+///         node.user.country_id == Some(child.country.id)
 ///     }
 ///
-///     fn is_child_of(node: &Self, child: &(Country, &()), field_args: &Self::FieldArguments) -> bool {
-///         node.user.country_id == Some((child.0).country.id)
-///     }
-///
-///     fn loaded_child(node: &mut Self, child: Country) {
-///         node.country.loaded(child)
-///     }
-///
-///     fn assert_loaded_otherwise_failed(node: &mut Self) {
-///         node.country.assert_loaded_otherwise_failed();
+///     fn association(node: &mut Self) -> &mut dyn Association<Country> {
+///         &mut node.country
 ///     }
 /// }
 /// ```
@@ -992,21 +931,8 @@ pub trait GraphqlNodeForModel: Sized {
 ///
 /// ## `Child`
 ///
-/// If model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
+/// Is the model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
 /// this type will default to `models::Country`.
-///
-/// ## `QueryTrailT`
-///
-/// Since [we cannot depend directly](trait.GenericQueryTrail.html) on [`QueryTrail`][] we have to
-/// depend on this generic version instead.
-///
-/// The generic constraint enforces that [`.walk()`][] must to have been called on the `QueryTrail` to
-/// ensure the field we're trying to eager load is actually part of the incoming GraphQL query.
-/// Otherwise the field will not be eager loaded. This is how the compiler can guarantee that we
-/// don't eager load too much.
-///
-/// [`QueryTrail`]: https://docs.rs/juniper-from-schema/#query-trails
-/// [`.walk()`]: https://docs.rs/juniper-from-schema/#k
 ///
 /// ## `Context`
 ///
@@ -1071,36 +997,34 @@ where
         + Clone,
     JoinModel: 'static + Clone + ?Sized,
 {
-    /// The id type the child uses. This will be different for the different [association types][].
-    ///
-    /// [association types]: /#associations
-    type ChildId: Hash + Eq;
-
     type FieldArguments;
 
-    /// Given a list of models, load either the list of child ids or child models associated.
-    fn child_ids(
-        models: &[Self::Model],
-        db: &Self::Connection,
-        field_args: &Self::FieldArguments,
-    ) -> Result<LoadResult<Self::ChildId, (Child::Model, JoinModel)>, Self::Error>;
-
-    /// Load a list of children from a list of ids.
     fn load_children(
-        ids: &[Self::ChildId],
-        db: &Self::Connection,
+        models: &[Self::Model],
         field_args: &Self::FieldArguments,
-    ) -> Result<Vec<Child::Model>, Self::Error>;
+        db: &Self::Connection,
+    ) -> Result<LoadChildrenOutput<Child::Model, JoinModel>, Self::Error>;
 
     /// Does this parent and this child belong together?
-    fn is_child_of(parent: &Self, child: &(Child, &JoinModel), field_args: &Self::FieldArguments) -> bool;
+    ///
+    /// The `join_model` is only used for `HasManyThrough` associations.
+    fn is_child_of(
+        parent: &Self,
+        child: &Child,
+        join_model: &JoinModel,
+        field_args: &Self::FieldArguments,
+    ) -> bool;
 
-    /// Store the loaded child on the association.
-    fn loaded_child(node: &mut Self, child: Child);
-
-    /// The association should have been loaded by now, if not store an error inside the
-    /// association (if applicable for the particular association).
-    fn assert_loaded_otherwise_failed(node: &mut Self);
+    /// Return the particular association type.
+    ///
+    /// In most cases the implementation will be something like
+    ///
+    /// ```ignore
+    /// fn association(node: &mut User) -> &mut dyn Association<Country> {
+    ///     &mut node.country
+    /// }
+    /// ```
+    fn association(node: &mut Self) -> &mut dyn Association<Child>;
 
     /// Combine all the methods above to eager load the children for a list of GraphQL values and
     /// models.
@@ -1111,12 +1035,11 @@ where
         trail: &QueryTrail<'look_ahead, Child, Walked>,
         field_args: &Self::FieldArguments,
     ) -> Result<(), Self::Error> {
-        let child_models = match Self::child_ids(models, db, field_args)? {
-            LoadResult::Ids(child_ids) => {
+        let child_models = match Self::load_children(models, field_args, db)? {
+            LoadChildrenOutput::ChildModels(child_models) => {
                 assert!(same_type::<JoinModel, ()>());
 
-                let loaded_models = Self::load_children(&child_ids, db, field_args)?;
-                loaded_models
+                child_models
                     .into_iter()
                     .map(|model| {
                         #[allow(unsafe_code)]
@@ -1125,7 +1048,7 @@ where
                             // happens for all the `Has*` types except `HasManyThrough`.
                             //
                             // `HasManyThrough` requires something to join the two types on,
-                            // therefore `child_ids` will return a variant of `LoadResult::Models`
+                            // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
                             std::mem::transmute_copy::<(), JoinModel>(&())
                         };
 
@@ -1133,7 +1056,7 @@ where
                     })
                     .collect::<Vec<_>>()
             }
-            LoadResult::Models(model_and_join_pairs) => model_and_join_pairs,
+            LoadChildrenOutput::ChildAndJoinModels(model_and_join_pairs) => model_and_join_pairs,
         };
 
         let children = child_models
@@ -1170,18 +1093,75 @@ where
         for node in nodes {
             let matching_children = children
                 .iter()
-                .filter(|child_model| Self::is_child_of(node, child_model, field_args))
+                .filter(|child_model| {
+                    Self::is_child_of(node, &child_model.0, &child_model.1, field_args)
+                })
                 .cloned()
                 .collect::<Vec<_>>();
 
             for child in matching_children {
-                Self::loaded_child(node, child.0);
+                Self::association(node).loaded_child(child.0);
             }
 
-            Self::assert_loaded_otherwise_failed(node);
+            Self::association(node).assert_loaded_otherwise_failed();
         }
 
         Ok(())
+    }
+}
+
+/// Methods available for all association types.
+pub trait Association<T> {
+    /// Store the loaded child on the association.
+    fn loaded_child(&mut self, child: T);
+
+    /// The association should have been loaded by now, if not store an error inside the
+    /// association (if applicable for the particular association).
+    fn assert_loaded_otherwise_failed(&mut self);
+}
+
+impl<T> Association<T> for HasOne<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.loaded(child)
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        self.0.assert_loaded_otherwise_failed()
+    }
+}
+
+impl<T> Association<T> for OptionHasOne<T> {
+    fn loaded_child(&mut self, child: T) {
+        std::mem::replace(self, OptionHasOne(Some(child)));
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        match self.0 {
+            Some(_) => {}
+            None => {
+                std::mem::replace(self, OptionHasOne(None));
+            }
+        }
+    }
+}
+
+impl<T> Association<T> for HasMany<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.push(child);
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        // cannot fail, defaults to an empty vec
+    }
+}
+
+impl<T> Association<T> for HasManyThrough<T> {
+    fn loaded_child(&mut self, child: T) {
+        self.0.push(child);
+    }
+
+    fn assert_loaded_otherwise_failed(&mut self) {
+        // cannot fail, defaults to an empty vec
     }
 }
 
@@ -1191,11 +1171,12 @@ fn same_type<A: 'static, B: 'static>() -> bool {
     TypeId::of::<A>() == TypeId::of::<B>()
 }
 
-/// The result of loading child ids.
+/// The result of loading child models.
 ///
-/// [`HasOne`][] and [`OptionHasOne`][] can return the child ids because the model has the foreign
-/// key. However for [`HasMany`][] and [`HasManyThrough`][] the model itself doesn't have the
-/// foreign key, the join models do. So we have the return those instead.
+/// [`HasOne`][], [`OptionHasOne`][], [`HasMany`][] can return the child models directly because
+/// the model has the foreign key. However for [`HasManyThrough`][] neither the parent or child
+/// model has any of the foreign keys. Only the join model does. So we have to include those in the
+/// result.
 ///
 /// Unless you're customizing [`EagerLoadChildrenOfType`] you shouldn't have to worry about this.
 ///
@@ -1205,12 +1186,12 @@ fn same_type<A: 'static, B: 'static>() -> bool {
 /// [`HasManyThrough`]: struct.HasManyThrough.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 #[derive(Debug)]
-pub enum LoadResult<A, B> {
-    /// Ids where loaded.
-    Ids(Vec<A>),
+pub enum LoadChildrenOutput<ChildModel, JoinModel = ()> {
+    /// Child models were loaded.
+    ChildModels(Vec<ChildModel>),
 
-    /// Models were loaded.
-    Models(Vec<B>),
+    /// Child models along with the respective join model was loaded.
+    ChildAndJoinModels(Vec<(ChildModel, JoinModel)>),
 }
 
 /// The main entry point trait for doing eager loading.
@@ -1325,6 +1306,8 @@ mod test {
     fn ui() {
         let t = trybuild::TestCases::new();
         t.pass("tests/compile_pass/*.rs");
+
+        // We currently don't have any compile tests that should fail to build
         // t.compile_fail("tests/compile_fail/*.rs");
     }
 }

@@ -7,7 +7,8 @@ use assert_json_diff::{assert_json_eq, assert_json_include};
 use helpers::{SortedExtension, StatsHash};
 use juniper::{Executor, FieldError, FieldResult};
 use juniper_eager_loading::{
-    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, LoadFrom, OptionHasOne,
+    prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, LoadChildrenOutput, LoadFrom,
+    OptionHasOne,
 };
 use juniper_from_schema::graphql_schema;
 use serde_json::{json, Value};
@@ -271,49 +272,31 @@ impl<'look_ahead: 'query_trail, 'query_trail>
     EagerLoadChildrenOfType<'look_ahead, 'query_trail, User, EagerLoadingContextCountryForUsers, ()>
     for Country
 {
-    type ChildId = Vec<<User as juniper_eager_loading::GraphqlNodeForModel>::Id>;
     type FieldArguments = CountryUsersArgs<'query_trail, 'look_ahead>;
 
-    #[allow(unused_variables)]
-    fn child_ids(
+    fn load_children(
         models: &[Self::Model],
-        db: &Self::Connection,
         field_args: &Self::FieldArguments,
+        db: &Self::Connection,
     ) -> Result<
-        juniper_eager_loading::LoadResult<
-            Self::ChildId,
-            (
-                <User as juniper_eager_loading::GraphqlNodeForModel>::Model,
-                (),
-            ),
-        >,
+        LoadChildrenOutput<<User as juniper_eager_loading::GraphqlNodeForModel>::Model, ()>,
         Self::Error,
     > {
-        let child_models = juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
-        let child_models = child_models.into_iter().map(|child| (child, ())).collect();
-        Ok(juniper_eager_loading::LoadResult::Models(child_models))
+        let children = LoadFrom::load(&models, field_args, db)?;
+        Ok(LoadChildrenOutput::ChildModels(children))
     }
 
-    fn load_children(
-        ids: &[Self::ChildId],
-        db: &Self::Connection,
-        field_args: &Self::FieldArguments,
-    ) -> Result<Vec<<User as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error> {
-        let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
-        let ids = juniper_eager_loading::unique(ids);
-        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)
+    fn is_child_of(
+        node: &Self,
+        child: &User,
+        _join_model: &(),
+        _field_args: &Self::FieldArguments,
+    ) -> bool {
+        node.country.id == child.user.country_id
     }
 
-    fn is_child_of(node: &Self, child: &(User, &()), _field_args: &Self::FieldArguments) -> bool {
-        node.country.id == (child.0).user.country_id
-    }
-
-    fn loaded_child(node: &mut Self, child: User) {
-        node.users.loaded(child)
-    }
-
-    fn assert_loaded_otherwise_failed(node: &mut Self) {
-        node.users.assert_loaded_otherwise_failed();
+    fn association(node: &mut Country) -> &mut dyn Association<User> {
+        &mut node.users
     }
 }
 
@@ -388,11 +371,6 @@ fn loading_user() {
                             "isAdmin": true,
                             "country": { "id": country.id }
                         },
-                        // {
-                        //     "id": alice.id,
-                        //     "isAdmin": false,
-                        //     "country": { "id": country.id }
-                        // },
                     ]
                 }
             ],

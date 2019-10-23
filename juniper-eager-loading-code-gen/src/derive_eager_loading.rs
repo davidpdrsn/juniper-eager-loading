@@ -18,6 +18,7 @@ pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let out = DeriveData::new(ast, args);
     let tokens = out.build_derive_output();
+
     tokens.into()
 }
 
@@ -98,12 +99,9 @@ impl DeriveData {
         let inner_type = &data.inner_type;
         let struct_name = self.struct_name();
         let join_model_impl = self.join_model_impl(&data);
-        let child_id = self.child_id(&data);
-        let child_ids_impl = self.child_ids_impl(&data);
         let load_children_impl = self.load_children_impl(&data);
+        let association_impl = self.association_impl(&data);
         let is_child_of_impl = self.is_child_of_impl(&data);
-        let loaded_or_failed_child_impl = self.loaded_or_failed_child_impl(&data);
-        let assert_loaded_otherwise_failed_impl = self.assert_loaded_otherwise_failed_impl(&data);
 
         let context = self.field_context_name(&field);
 
@@ -118,14 +116,11 @@ impl DeriveData {
                 #context,
                 #join_model_impl,
             > for #struct_name {
-                type ChildId = #child_id;
                 type FieldArguments = ();
 
-                #child_ids_impl
                 #load_children_impl
                 #is_child_of_impl
-                #loaded_or_failed_child_impl
-                #assert_loaded_otherwise_failed_impl
+                #association_impl
             }
         };
 
@@ -209,24 +204,45 @@ impl DeriveData {
         }
     }
 
-    fn child_ids_impl(&self, data: &FieldDeriveData) -> TokenStream {
+    fn load_children_impl(&self, data: &FieldDeriveData) -> TokenStream {
+        use AssociationType::*;
+
         let foreign_key_field = &data.foreign_key_field;
         let join_model = &data.join_model;
         let model_id_field = data.model_id_field();
         let inner_type = &data.inner_type;
 
-        let child_ids_impl = match data.association_type {
-            AssociationType::HasOne | AssociationType::OptionHasOne => {
+        let load_children_impl = match data.association_type {
+            HasOne => {
                 quote! {
                     let ids = models
                         .iter()
                         .map(|model| model.#foreign_key_field.clone())
                         .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
-                    Ok(juniper_eager_loading::LoadResult::Ids(ids))
+
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)?;
+
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
             }
-            AssociationType::HasMany => {
+            OptionHasOne => {
+                quote! {
+                    let ids = models
+                        .iter()
+                        .filter_map(|model| model.#foreign_key_field)
+                        .map(|id| id.clone())
+                        .collect::<Vec<_>>();
+                    let ids = juniper_eager_loading::unique(ids);
+
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)?;
+
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
+                }
+            }
+            HasMany => {
                 let filter = if let Some(predicate_method) = &data.predicate_method {
                     quote! {
                         let child_models = child_models
@@ -239,23 +255,15 @@ impl DeriveData {
                 };
 
                 quote! {
-                    let child_models = <
-                        <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
-                        as
-                        juniper_eager_loading::LoadFrom<Self::Model, Self::FieldArguments>
-                    >::load(&models, field_args, db)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
 
                     #filter
 
-                    let child_models = child_models
-                        .into_iter()
-                        .map(|child| (child, ()))
-                        .collect();
-
-                    Ok(juniper_eager_loading::LoadResult::Models(child_models))
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
             }
-            AssociationType::HasManyThrough => {
+            HasManyThrough => {
                 let filter = if let Some(predicate_method) = &data.predicate_method {
                     quote! {
                         let join_models = join_models
@@ -268,19 +276,13 @@ impl DeriveData {
                 };
 
                 quote! {
-                    let join_models = <
-                        #join_model
-                        as
-                        juniper_eager_loading::LoadFrom<Self::Model, Self::FieldArguments>
-                    >::load(&models, field_args, db)?;
+                    let join_models: Vec<#join_model> =
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
 
                     #filter
 
-                    let child_models = <
-                        <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
-                        as
-                        juniper_eager_loading::LoadFrom<#join_model, Self::FieldArguments>
-                    >::load(&join_models, field_args, db)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, db)?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -295,72 +297,25 @@ impl DeriveData {
                         }
                     }
 
-                    Ok(juniper_eager_loading::LoadResult::Models(child_and_join_model_pairs))
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildAndJoinModels(child_and_join_model_pairs))
                 }
             }
         };
 
         quote! {
             #[allow(unused_variables)]
-            fn child_ids(
+            fn load_children(
                 models: &[Self::Model],
-                db: &Self::Connection,
                 field_args: &Self::FieldArguments,
+                db: &Self::Connection,
             ) -> Result<
-                juniper_eager_loading::LoadResult<
-                    Self::ChildId,
-                    (<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model, #join_model)
+                juniper_eager_loading::LoadChildrenOutput<
+                    <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model,
+                    #join_model
                 >,
                 Self::Error,
             > {
-                #child_ids_impl
-            }
-        }
-    }
-
-    fn load_children_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        let normalize_ids = self.normalize_ids(data);
-        let inner_type = &data.inner_type;
-        let child_id_type = quote! {
-            <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Id
-        };
-
-        quote! {
-            fn load_children(
-                ids: &[Self::ChildId],
-                db: &Self::Connection,
-                field_args: &Self::FieldArguments,
-            ) -> Result<Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model>, Self::Error> {
-                #normalize_ids
-                <
-                    <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model
-                    as
-                    juniper_eager_loading::LoadFrom<#child_id_type, Self::FieldArguments>
-                >::load(&ids, field_args, db)
-            }
-        }
-    }
-
-    fn normalize_ids(&self, data: &FieldDeriveData) -> TokenStream {
-        match data.association_type {
-            AssociationType::HasOne => {
-                quote! {}
-            }
-            AssociationType::OptionHasOne => {
-                quote! {
-                    let ids = ids
-                        .into_iter()
-                        .filter_map(|id| id .as_ref())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let ids = juniper_eager_loading::unique(ids);
-                }
-            }
-            AssociationType::HasMany | AssociationType::HasManyThrough => {
-                quote! {
-                    let ids = ids.iter().flatten().cloned().collect::<Vec<_>>();
-                    let ids = juniper_eager_loading::unique(ids);
-                }
+                #load_children_impl
             }
         }
     }
@@ -377,84 +332,56 @@ impl DeriveData {
         let is_child_of_impl = match data.association_type {
             AssociationType::HasOne => {
                 quote! {
-                    node.#root_model_field.#foreign_key_field == (child.0).#field_root_model_field.id
+                    node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
                 }
             }
             AssociationType::OptionHasOne => {
                 quote! {
-                    node.#root_model_field.#foreign_key_field == Some((child.0).#field_root_model_field.id)
+                    node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
                 }
             }
             AssociationType::HasMany => {
                 if data.foreign_key_optional {
                     quote! {
                         Some(node.#root_model_field.id) ==
-                            (child.0).#field_root_model_field.#foreign_key_field
+                            child.#field_root_model_field.#foreign_key_field
                     }
                 } else {
                     quote! {
                         node.#root_model_field.id ==
-                            (child.0).#field_root_model_field.#foreign_key_field
+                            child.#field_root_model_field.#foreign_key_field
                     }
                 }
             }
             AssociationType::HasManyThrough => {
                 quote! {
-                    let join_model = &child.1;
-                    let association = &child.0;
-
                     node.#root_model_field.id == join_model.#foreign_key_field &&
-                        join_model.#model_id_field == association.#model_field.id
+                        join_model.#model_id_field == child.#model_field.id
                 }
             }
         };
 
         quote! {
-            fn is_child_of(node: &Self, child: &(#inner_type, &#join_model), _: &Self::FieldArguments) -> bool {
+            fn is_child_of(
+                node: &Self,
+                child: &#inner_type,
+                join_model: &#join_model,
+                _field_args: &Self::FieldArguments,
+            ) -> bool {
                 #is_child_of_impl
             }
         }
     }
 
-    fn child_id(&self, data: &FieldDeriveData) -> TokenStream {
-        let inner_type = &data.inner_type;
-        let child_id_type = quote! {
-            <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Id
-        };
-
-        match data.association_type {
-            AssociationType::HasOne => {
-                quote! { #child_id_type }
-            }
-            AssociationType::OptionHasOne => {
-                quote! { Option<#child_id_type> }
-            }
-            AssociationType::HasMany => {
-                quote! { Vec<#child_id_type> }
-            }
-            AssociationType::HasManyThrough => {
-                quote! { Vec<#child_id_type> }
-            }
-        }
-    }
-
-    fn loaded_or_failed_child_impl(&self, data: &FieldDeriveData) -> TokenStream {
+    fn association_impl(&self, data: &FieldDeriveData) -> TokenStream {
         let field_name = &data.field_name;
         let inner_type = &data.inner_type;
 
         quote! {
-            fn loaded_child(node: &mut Self, child: #inner_type) {
-                node.#field_name.loaded(child)
-            }
-        }
-    }
-
-    fn assert_loaded_otherwise_failed_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        let field_name = &data.field_name;
-
-        quote! {
-            fn assert_loaded_otherwise_failed(node: &mut Self) {
-                node.#field_name.assert_loaded_otherwise_failed();
+            fn association(node: &mut Self) ->
+                &mut dyn juniper_eager_loading::Association<#inner_type>
+            {
+                &mut node.#field_name
             }
         }
     }
@@ -649,7 +576,6 @@ fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct FieldDeriveData {
     foreign_key_field: TokenStream,
     foreign_key_optional: bool,

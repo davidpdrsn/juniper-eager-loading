@@ -213,7 +213,11 @@ mod models {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(countries: &[Country], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(
+            countries: &[Country],
+            _: &(),
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
             let country_ids = countries
                 .iter()
                 .map(|country| country.id)
