@@ -346,16 +346,3 @@ macro_rules! impl_load_from_for_diesel_sqlite {
         $crate::proc_macros::impl_load_from_for_diesel_sqlite!($($token)*);
     }
 }
-
-/// This method should not be used anymore. Instead use [`impl_load_from_for_diesel_pg!`][] as it
-/// is more specific.
-///
-/// [`impl_load_from_for_diesel_pg!`]: macro.impl_load_from_for_diesel_pg.html
-/// [`LoadFrom`]: trait.LoadFrom.html
-#[macro_export]
-#[deprecated(since = "0.3.1", note = "Use `impl_load_from_for_diesel_pg` instead")]
-macro_rules! impl_load_from_for_diesel {
-    ( $($token:tt)* ) => {
-        $crate::impl_load_from_for_diesel_pg! { $($token)* }
-    }
-}

@@ -21,9 +21,9 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 - The signature of `EagerLoadChildrenOfType::is_child_of` has been changed to `parent: &Self, child: &Child, join_model: &JoinModel`. Manually pulling things out of the tuple was tedious.
 - `EagerLoadChildrenOfType::association` has been added. This methods allows for some boilerplate to be removed from `EagerLoadChildrenOfType`.
 - `EagerLoadChildrenOfType::loaded_child` and `EagerLoadChildrenOfType::assert_loaded_otherwise_failed` has been removed and implemented generically using the new `Association` trait.
+- The deprecated macro `impl_load_from_for_diesel` has been removed completely. Use `impl_load_from_for_diesel_{pg|mysql|sqlite}` instead.
 
 If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
-
 ## [0.3.1] - 2019-10-09
 
 ### Added
