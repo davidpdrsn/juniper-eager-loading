@@ -6,6 +6,14 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
+None.
+
+### Breaking changes
+
+None.
+
+## [0.4.0] - 2019-10-23
+
 - Move `impl_load_from_for_diesel_{pg|mysql|sqlite}!` to proc-macros. Are fully backwards compatible but will give better errors.
 - Tweak docs for `impl_load_from_for_diesel_{pg|mysql|sqlite}!`.
 - `Association` trait has been added to abstraction over `HasOne`, `OptionHasOne`, `HasMany`, and `HasManyThrough` associations.
@@ -83,6 +91,7 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 Initial release.
 
+[0.4.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.1...0.4.0
 [0.3.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.2...0.2.0
