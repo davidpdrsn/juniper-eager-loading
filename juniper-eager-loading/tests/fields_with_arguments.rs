@@ -268,10 +268,7 @@ pub struct Country {
 #[allow(missing_docs, dead_code)]
 struct EagerLoadingContextCountryForUsers;
 
-impl<'a>
-    EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, ()>
-    for Country
-{
+impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, ()> for Country {
     type FieldArguments = CountryUsersArgs<'a>;
 
     fn load_children(
