@@ -74,7 +74,7 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32, CountryUsersArgs<'_, '_>> for User {
+    impl juniper_eager_loading::LoadFrom<i32, CountryUsersArgs<'_>> for User {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
@@ -142,7 +142,7 @@ mod models {
         }
     }
 
-    impl LoadFrom<Country, CountryUsersArgs<'_, '_>> for User {
+    impl LoadFrom<Country, CountryUsersArgs<'_>> for User {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
@@ -268,11 +268,11 @@ pub struct Country {
 #[allow(missing_docs, dead_code)]
 struct EagerLoadingContextCountryForUsers;
 
-impl<'look_ahead: 'query_trail, 'query_trail>
-    EagerLoadChildrenOfType<'look_ahead, 'query_trail, User, EagerLoadingContextCountryForUsers, ()>
+impl<'a>
+    EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, ()>
     for Country
 {
-    type FieldArguments = CountryUsersArgs<'query_trail, 'look_ahead>;
+    type FieldArguments = CountryUsersArgs<'a>;
 
     fn load_children(
         models: &[Self::Model],

@@ -878,10 +878,9 @@ pub trait GraphqlNodeForModel: Sized {
 /// #[allow(missing_docs, dead_code)]
 /// struct EagerLoadingContextUserForCountry;
 ///
-/// impl<'look_ahead, 'query_trail>
+/// impl<'a>
 ///     EagerLoadChildrenOfType<
-///         'look_ahead,
-///         'query_trail,
+///         'a,
 ///         Country,
 ///         EagerLoadingContextUserForCountry,
 ///     > for User
@@ -989,7 +988,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// [`LoadFrom`]: trait.LoadFrom.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 // `JoinModel` cannot be an associated type because it requires a default.
-pub trait EagerLoadChildrenOfType<'look_ahead, 'query_trail, Child, Context, JoinModel = ()>
+pub trait EagerLoadChildrenOfType<'a, Child, Context, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
     Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error>
@@ -1032,7 +1031,7 @@ where
         nodes: &mut [Self],
         models: &[Self::Model],
         db: &Self::Connection,
-        trail: &QueryTrail<'look_ahead, Child, Walked>,
+        trail: &QueryTrail<'a, Child, Walked>,
         field_args: &Self::FieldArguments,
     ) -> Result<(), Self::Error> {
         let child_models = match Self::load_children(models, field_args, db)? {

@@ -14,7 +14,7 @@ version = "0.3.1"
 
 [dependencies]
 # juniper-from-schema = "^0.4"
-juniper-from-schema = { git = "https://github.com/davidpdrsn/juniper-from-schema.git", rev = "762a4d42c5fca" }
+juniper-from-schema = { git = "https://github.com/davidpdrsn/juniper-from-schema.git", rev = "fae654a" }
 juniper-eager-loading-code-gen = { version = "0.3.1", path = "../juniper-eager-loading-code-gen" }
 
 [dev-dependencies]

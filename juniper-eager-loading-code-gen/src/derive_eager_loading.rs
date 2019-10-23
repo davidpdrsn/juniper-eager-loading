@@ -109,9 +109,8 @@ impl DeriveData {
             #[allow(missing_docs, dead_code)]
             struct #context;
 
-            impl<'look_ahead: 'query_trail, 'query_trail> juniper_eager_loading::EagerLoadChildrenOfType<
-                'look_ahead,
-                'query_trail,
+            impl<'a> juniper_eager_loading::EagerLoadChildrenOfType<
+                'a,
                 #inner_type,
                 #context,
                 #join_model_impl,
