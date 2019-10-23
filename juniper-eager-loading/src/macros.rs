@@ -183,7 +183,7 @@
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_pg {
     ( $($token:tt)* ) => {
-        juniper_eager_loading_code_gen::impl_load_from_for_diesel_pg!($($token)*);
+        $crate::proc_macros::impl_load_from_for_diesel_pg!($($token)*);
     }
 }
 
@@ -263,7 +263,7 @@ macro_rules! impl_load_from_for_diesel_pg {
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_mysql {
     ( $($token:tt)* ) => {
-        juniper_eager_loading_code_gen::impl_load_from_for_diesel_mysql!($($token)*);
+        $crate::proc_macros::impl_load_from_for_diesel_mysql!($($token)*);
     }
 }
 
@@ -343,7 +343,7 @@ macro_rules! impl_load_from_for_diesel_mysql {
 #[macro_export]
 macro_rules! impl_load_from_for_diesel_sqlite {
     ( $($token:tt)* ) => {
-        juniper_eager_loading_code_gen::impl_load_from_for_diesel_sqlite!($($token)*);
+        $crate::proc_macros::impl_load_from_for_diesel_sqlite!($($token)*);
     }
 }
 

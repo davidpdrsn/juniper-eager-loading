@@ -503,6 +503,14 @@ use std::{fmt, hash::Hash};
 
 pub use juniper_eager_loading_code_gen::EagerLoading;
 
+#[doc(hidden)]
+pub mod proc_macros {
+    pub use juniper_eager_loading_code_gen::{
+        impl_load_from_for_diesel_mysql, impl_load_from_for_diesel_pg,
+        impl_load_from_for_diesel_sqlite,
+    };
+}
+
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
 pub mod prelude {
     pub use super::Association;
