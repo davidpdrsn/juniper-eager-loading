@@ -9,6 +9,7 @@ use juniper_eager_loading::{
     prelude::*, EagerLoading, HasMany, HasManyThrough, HasOne, OptionHasOne,
 };
 use juniper_from_schema::graphql_schema;
+use models::{CityId, CompanyId, CountryId, EmploymentId, IssueId, UserId};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
@@ -68,35 +69,60 @@ graphql_schema! {
 }
 
 mod models {
+    macro_rules! make_model_ids {
+        ( $($name:ident),* ) => {
+            $(
+                #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash)]
+                pub struct $name(i32);
+
+                impl From<i32> for $name {
+                    fn from(id: i32) -> $name {
+                        $name(id)
+                    }
+                }
+
+                impl std::ops::Deref for $name {
+                    type Target = i32;
+
+                    fn deref(&self) -> &i32 {
+                        &self.0
+                    }
+                }
+            )*
+        }
+    }
+
+    make_model_ids!(UserId, CountryId, CityId, CompanyId, EmploymentId, IssueId);
+
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct User {
-        pub id: i32,
-        pub country_id: i32,
-        pub city_id: Option<i32>,
+        pub id: UserId,
+        pub country_id: CountryId,
+        pub city_id: Option<CityId>,
     }
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Country {
-        pub id: i32,
+        pub id: CountryId,
     }
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct City {
-        pub id: i32,
-        pub country_id: i32,
+        pub id: CityId,
+        pub country_id: CountryId,
     }
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Company {
-        pub id: i32,
+        pub id: CompanyId,
         pub name: String,
     }
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Employment {
-        pub id: i32,
-        pub user_id: i32,
-        pub company_id: i32,
+        pub id: EmploymentId,
+        pub user_id: UserId,
+        pub company_id: CompanyId,
         pub primary: bool,
     }
 
@@ -108,16 +134,20 @@ mod models {
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct Issue {
-        pub id: i32,
+        pub id: IssueId,
         pub title: String,
-        pub reviewer_id: Option<i32>,
+        pub reviewer_id: Option<UserId>,
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for Country {
+    impl juniper_eager_loading::LoadFrom<CountryId> for Country {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(
+            ids: &[CountryId],
+            _: &(),
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
             let countries = db
                 .countries
                 .all_values()
@@ -129,11 +159,11 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for City {
+    impl juniper_eager_loading::LoadFrom<CityId> for City {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[CityId], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let countries = db
                 .cities
                 .all_values()
@@ -145,11 +175,11 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for User {
+    impl juniper_eager_loading::LoadFrom<UserId> for User {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[UserId], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .users
                 .all_values()
@@ -161,11 +191,15 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for Company {
+    impl juniper_eager_loading::LoadFrom<CompanyId> for Company {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(
+            ids: &[CompanyId],
+            _: &(),
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .companies
                 .all_values()
@@ -177,11 +211,15 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for Employment {
+    impl juniper_eager_loading::LoadFrom<EmploymentId> for Employment {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(
+            ids: &[EmploymentId],
+            _: &(),
+            db: &Self::Connection,
+        ) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .employments
                 .all_values()
@@ -193,11 +231,11 @@ mod models {
         }
     }
 
-    impl juniper_eager_loading::LoadFrom<i32> for Issue {
+    impl juniper_eager_loading::LoadFrom<IssueId> for Issue {
         type Error = Box<dyn std::error::Error>;
         type Connection = super::Db;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(ids: &[IssueId], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
             let models = db
                 .issues
                 .all_values()
@@ -295,12 +333,12 @@ mod models {
 }
 
 pub struct Db {
-    users: StatsHash<i32, models::User>,
-    countries: StatsHash<i32, models::Country>,
-    cities: StatsHash<i32, models::City>,
-    companies: StatsHash<i32, models::Company>,
-    employments: StatsHash<i32, models::Employment>,
-    issues: StatsHash<i32, models::Issue>,
+    users: StatsHash<UserId, models::User>,
+    countries: StatsHash<CountryId, models::Country>,
+    cities: StatsHash<CityId, models::City>,
+    companies: StatsHash<CompanyId, models::Company>,
+    employments: StatsHash<EmploymentId, models::Employment>,
+    issues: StatsHash<IssueId, models::Issue>,
 }
 
 pub struct Context {
@@ -320,7 +358,11 @@ impl QueryFields for Query {
     ) -> FieldResult<User> {
         let db = &executor.context().db;
 
-        let user_model = db.users.get(&id).ok_or("User not found")?.clone();
+        let user_model = db
+            .users
+            .get(&UserId::from(id))
+            .ok_or("User not found")?
+            .clone();
         let user = User::new_from_model(&user_model);
         let user = User::eager_load_all_children(user, &[user_model], db, trail)?;
         Ok(user)
@@ -635,25 +677,30 @@ fn loading_user() {
     let cities = StatsHash::new("cities");
     let mut users = StatsHash::new("users");
 
-    let mut country = models::Country { id: 10 };
+    let mut country = models::Country {
+        id: CountryId::from(10),
+    };
     let country_id = country.id;
 
-    let other_city = models::City { id: 30, country_id };
+    let other_city = models::City {
+        id: CityId::from(30),
+        country_id,
+    };
 
     countries.insert(country_id, country);
 
     users.insert(
-        1,
+        UserId::from(1),
         models::User {
-            id: 1,
+            id: UserId::from(1),
             country_id,
             city_id: None,
         },
     );
     users.insert(
-        2,
+        UserId::from(2),
         models::User {
-            id: 2,
+            id: UserId::from(2),
             country_id,
             city_id: None,
         },
@@ -687,25 +734,30 @@ fn loading_users() {
     let cities = StatsHash::new("cities");
     let mut users = StatsHash::new("users");
 
-    let mut country = models::Country { id: 10 };
+    let mut country = models::Country {
+        id: CountryId::from(10),
+    };
     let country_id = country.id;
 
-    let other_city = models::City { id: 30, country_id };
+    let other_city = models::City {
+        id: CityId::from(30),
+        country_id,
+    };
 
     countries.insert(country_id, country);
 
     users.insert(
-        1,
+        UserId::from(1),
         models::User {
-            id: 1,
+            id: UserId::from(1),
             country_id,
             city_id: None,
         },
     );
     users.insert(
-        2,
+        UserId::from(2),
         models::User {
-            id: 2,
+            id: UserId::from(2),
             country_id,
             city_id: None,
         },
@@ -742,60 +794,62 @@ fn loading_users_and_associations() {
     let mut cities = StatsHash::new("cities");
     let mut users = StatsHash::new("users");
 
-    let country = models::Country { id: 10 };
+    let country = models::Country {
+        id: CountryId::from(10),
+    };
 
     countries.insert(country.id, country.clone());
 
     let city = models::City {
-        id: 20,
+        id: CityId::from(20),
         country_id: country.id,
     };
     cities.insert(city.id, city.clone());
 
     let other_city = models::City {
-        id: 30,
+        id: CityId::from(30),
         country_id: country.id,
     };
     cities.insert(other_city.id, other_city.clone());
 
     users.insert(
-        1,
+        UserId::from(1),
         models::User {
-            id: 1,
+            id: UserId::from(1),
             country_id: country.id,
             city_id: Some(other_city.id),
         },
     );
     users.insert(
-        2,
+        UserId::from(2),
         models::User {
-            id: 2,
+            id: UserId::from(2),
             country_id: country.id,
             city_id: Some(city.id),
         },
     );
     users.insert(
-        3,
+        UserId::from(3),
         models::User {
-            id: 3,
+            id: UserId::from(3),
             country_id: country.id,
             city_id: Some(city.id),
         },
     );
     users.insert(
-        4,
+        UserId::from(4),
         models::User {
-            id: 4,
+            id: UserId::from(4),
             country_id: country.id,
             city_id: None,
         },
     );
     users.insert(
-        5,
+        UserId::from(5),
         models::User {
-            id: 5,
+            id: UserId::from(5),
             country_id: country.id,
-            city_id: Some(999),
+            city_id: Some(CityId::from(999)),
         },
     );
 
@@ -831,9 +885,9 @@ fn loading_users_and_associations() {
             "users": [
                 {
                     "id": 1,
-                    "city": { "id": other_city.id },
+                    "city": { "id": *other_city.id },
                     "country": {
-                        "id": country.id,
+                        "id": *country.id,
                         "cities": [
                             // the order of the citites doesn't matter
                             {},
@@ -843,11 +897,11 @@ fn loading_users_and_associations() {
                 },
                 {
                     "id": 2,
-                    "city": { "id": city.id }
+                    "city": { "id": *city.id }
                 },
                 {
                     "id": 3,
-                    "city": { "id": city.id }
+                    "city": { "id": *city.id }
                 },
                 {
                     "id": 4,
@@ -865,7 +919,7 @@ fn loading_users_and_associations() {
     let json_cities = json["users"][0]["country"]["cities"].as_array().unwrap();
     for json_city in json_cities {
         let id = json_city["id"].as_i64().unwrap() as i32;
-        assert!([city.id, other_city.id].contains(&id));
+        assert!([city.id, other_city.id].contains(&CityId::from(id)));
     }
 
     assert_eq!(1, counts.user_reads);
@@ -879,15 +933,17 @@ fn test_caching() {
     let mut countries = StatsHash::new("countries");
     let mut cities = StatsHash::new("cities");
 
-    let mut country = models::Country { id: 1 };
+    let mut country = models::Country {
+        id: CountryId::from(1),
+    };
 
     let city = models::City {
-        id: 2,
+        id: CityId::from(2),
         country_id: country.id,
     };
 
     let user = models::User {
-        id: 3,
+        id: UserId::from(3),
         country_id: country.id,
         city_id: Some(city.id),
     };
@@ -964,30 +1020,32 @@ fn test_loading_has_many_through() {
     let mut employments = StatsHash::new("employments");
     let mut users = StatsHash::new("users");
 
-    let mut country = models::Country { id: 1 };
+    let mut country = models::Country {
+        id: CountryId::from(1),
+    };
     countries.insert(country.id, country.clone());
 
     let mut tonsser = models::Company {
-        id: 2,
+        id: CompanyId::from(2),
         name: "Tonsser".to_string(),
     };
     companies.insert(tonsser.id, tonsser.clone());
 
     let mut peakon = models::Company {
-        id: 3,
+        id: CompanyId::from(3),
         name: "Peakon".to_string(),
     };
     companies.insert(peakon.id, peakon.clone());
 
     let user = models::User {
-        id: 4,
+        id: UserId::from(4),
         country_id: country.id,
         city_id: None,
     };
     users.insert(user.id, user.clone());
 
     let mut tonsser_employment = models::Employment {
-        id: 5,
+        id: EmploymentId::from(5),
         user_id: user.id,
         company_id: tonsser.id,
         primary: true,
@@ -995,7 +1053,7 @@ fn test_loading_has_many_through() {
     employments.insert(tonsser_employment.id, tonsser_employment.clone());
 
     let mut peakon_employment = models::Employment {
-        id: 6,
+        id: EmploymentId::from(6),
         user_id: user.id,
         company_id: peakon.id,
         primary: false,
@@ -1037,23 +1095,23 @@ fn test_loading_has_many_through() {
         expected: json!({
             "users": [
                 {
-                    "id": user.id,
+                    "id": *user.id,
                     "employments": [
                         {
-                            "user": { "id": user.id },
-                            "company": { "id": tonsser.id, "name": tonsser.name },
+                            "user": { "id": *user.id },
+                            "company": { "id": *tonsser.id, "name": tonsser.name },
                         },
                         {
-                            "user": { "id": user.id },
-                            "company": { "id": peakon.id, "name": peakon.name },
+                            "user": { "id": *user.id },
+                            "company": { "id": *peakon.id, "name": peakon.name },
                         },
                     ],
                     "companies": [
-                        { "id": tonsser.id, "name": tonsser.name },
-                        { "id": peakon.id, "name": peakon.name },
+                        { "id": *tonsser.id, "name": tonsser.name },
+                        { "id": *peakon.id, "name": peakon.name },
                     ],
                     "primaryEmployment": {
-                        "id": tonsser_employment.id,
+                        "id": *tonsser_employment.id,
                     },
                     "primaryCompany": {
                         "name": tonsser.name,
@@ -1071,25 +1129,27 @@ fn test_loading_has_many_fk_optional() {
     let mut users = StatsHash::new("users");
     let mut issues = StatsHash::new("issues");
 
-    let country = models::Country { id: 1 };
+    let country = models::Country {
+        id: CountryId::from(1),
+    };
     countries.insert(country.id, country.clone());
 
     let user = models::User {
-        id: 2,
+        id: UserId::from(2),
         country_id: country.id,
         city_id: None,
     };
     users.insert(user.id, user.clone());
 
     let assigned_issue = models::Issue {
-        id: 3,
+        id: IssueId::from(3),
         title: "This issue is assigned to somebody".to_string(),
         reviewer_id: Some(user.id),
     };
     issues.insert(assigned_issue.id, assigned_issue.clone());
 
     let unassigned_issue = models::Issue {
-        id: 4,
+        id: IssueId::from(4),
         title: "This issue hasn't been assigned to somebody".to_string(),
         reviewer_id: None,
     };
@@ -1123,10 +1183,10 @@ fn test_loading_has_many_fk_optional() {
         expected: json!({
             "users": [
                 {
-                    "id": user.id,
+                    "id": *user.id,
                     "issues": [
                         {
-                            "id": assigned_issue.id,
+                            "id": *assigned_issue.id,
                             "title": assigned_issue.title,
                         },
                     ],
