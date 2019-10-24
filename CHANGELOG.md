@@ -6,7 +6,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-None.
+- The [examples](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/examples) has been much improved.
 
 ### Breaking changes
 
