@@ -25,3 +25,19 @@ diesel = { version = "^1", features = ["postgres", "mysql", "sqlite"] }
 trybuild = "1.0.17"
 static_assertions = "1"
 either = "1"
+
+[[example]]
+name = "has_one"
+path = "../examples/has_one.rs"
+
+[[example]]
+name = "option_has_one"
+path = "../examples/option_has_one.rs"
+
+[[example]]
+name = "has_many"
+path = "../examples/has_many.rs"
+
+[[example]]
+name = "has_many_through"
+path = "../examples/has_many_through.rs"
