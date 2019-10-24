@@ -39,6 +39,10 @@ name = "option_has_one"
 path = "../examples/option_has_one.rs"
 
 [[example]]
+name = "option_has_one_no_macros"
+path = "../examples/option_has_one_no_macros.rs"
+
+[[example]]
 name = "has_many"
 path = "../examples/has_many.rs"
 
