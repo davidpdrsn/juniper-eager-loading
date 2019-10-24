@@ -22,9 +22,6 @@ use impl_load_from_for_diesel::Backend;
     attributes(eager_loading, has_one, option_has_one, has_many, has_many_through)
 )]
 pub fn derive_eager_loading(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    // let tokens = derive_eager_loading::gen_tokens(input);
-    // println!("{}", tokens);
-    // tokens
     derive_eager_loading::gen_tokens(input)
 }
 
