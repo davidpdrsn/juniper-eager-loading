@@ -47,5 +47,9 @@ name = "has_many"
 path = "../examples/has_many.rs"
 
 [[example]]
+name = "has_many_no_macros"
+path = "../examples/has_many_no_macros.rs"
+
+[[example]]
 name = "has_many_through"
 path = "../examples/has_many_through.rs"
