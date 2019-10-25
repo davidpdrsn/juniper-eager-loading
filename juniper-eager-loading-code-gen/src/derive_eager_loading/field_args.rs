@@ -24,6 +24,8 @@ pub struct DeriveArgs {
     error: syn::Path,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
+    #[darling(default)]
+    context: Option<syn::Path>,
 
     // TODO: Document this new attribute
     #[darling(default)]
@@ -57,6 +59,14 @@ impl DeriveArgs {
             let struct_name = struct_name.to_string().to_snake_case();
             let struct_name = Ident::new(&struct_name, Span::call_site());
             quote! { #struct_name }
+        }
+    }
+
+    pub fn context(&self) -> TokenStream {
+        if let Some(inner) = &self.context {
+            quote! { #inner }
+        } else {
+            quote! { Context }
         }
     }
 

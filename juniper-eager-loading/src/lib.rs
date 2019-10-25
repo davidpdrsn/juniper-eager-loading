@@ -806,6 +806,9 @@ pub trait GraphqlNodeForModel: Sized {
     /// The error type.
     type Error;
 
+    /// Your Juniper context type.
+    type Context;
+
     /// Create a new GraphQL type from a model.
     fn new_from_model(model: &Self::Model) -> Self;
 
@@ -976,7 +979,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// Is the model type of the child. If your `User` struct has a field of type `OptionHasOne<Country>`,
 /// this type will default to `models::Country`.
 ///
-/// ## `Context`
+/// ## `ImplContext`
 ///
 /// This "context" type is needed in case your GraphQL type has multiple assocations to values
 /// of the same type. Could for example be something like this
@@ -1031,11 +1034,14 @@ pub trait GraphqlNodeForModel: Sized {
 /// [`LoadFrom`]: trait.LoadFrom.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 // `JoinModel` cannot be an associated type because it requires a default.
-pub trait EagerLoadChildrenOfType<'a, Child, Context, JoinModel = ()>
+pub trait EagerLoadChildrenOfType<'a, Child, ImplContext, JoinModel = ()>
 where
     Self: GraphqlNodeForModel,
-    Child: GraphqlNodeForModel<Connection = Self::Connection, Error = Self::Error>
-        + EagerLoadAllChildren
+    Child: GraphqlNodeForModel<
+            Connection = Self::Connection,
+            Error = Self::Error,
+            Context = Self::Context,
+        > + EagerLoadAllChildren
         + Clone,
     JoinModel: 'static + Clone + ?Sized,
 {
@@ -1046,6 +1052,7 @@ where
     fn load_children(
         models: &[Self::Model],
         field_args: &Self::FieldArguments,
+        context: &Self::Context,
         db: &Self::Connection,
     ) -> Result<LoadChildrenOutput<Child::Model, JoinModel>, Self::Error>;
 
@@ -1057,6 +1064,7 @@ where
         child: &Child,
         join_model: &JoinModel,
         field_args: &Self::FieldArguments,
+        context: &Self::Context,
     ) -> bool;
 
     /// Return the particular association type.
@@ -1078,8 +1086,9 @@ where
         db: &Self::Connection,
         trail: &QueryTrail<'a, Child, Walked>,
         field_args: &Self::FieldArguments,
+        context: &Self::Context,
     ) -> Result<(), Self::Error> {
-        let child_models = match Self::load_children(models, field_args, db)? {
+        let child_models = match Self::load_children(models, field_args, context, db)? {
             LoadChildrenOutput::ChildModels(child_models) => {
                 assert!(same_type::<JoinModel, ()>());
 
@@ -1121,6 +1130,7 @@ where
             &child_models_without_join_models,
             db,
             trail,
+            context,
         )?;
 
         assert_eq!(len_before, child_models_without_join_models.len());
@@ -1138,7 +1148,7 @@ where
             let matching_children = children
                 .iter()
                 .filter(|child_model| {
-                    Self::is_child_of(node, &child_model.0, &child_model.1, field_args)
+                    Self::is_child_of(node, &child_model.0, &child_model.1, field_args, context)
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -1203,6 +1213,7 @@ where
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &QueryTrail<'_, Self, Walked>,
+        context: &Self::Context,
     ) -> Result<(), Self::Error>;
 
     /// Perform eager loading for a single GraphQL value.
@@ -1213,9 +1224,10 @@ where
         models: &[Self::Model],
         db: &Self::Connection,
         trail: &QueryTrail<'_, Self, Walked>,
+        context: &Self::Context,
     ) -> Result<Self, Self::Error> {
         let mut nodes = vec![node];
-        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail)?;
+        Self::eager_load_all_children_for_each(&mut nodes, models, db, trail, context)?;
 
         // This is safe because we just made a vec with exactly one element and
         // eager_load_all_children_for_each doesn't remove things from the vec
@@ -1245,8 +1257,16 @@ pub trait LoadFrom<T, Args = ()>: Sized {
     /// a connection an external web service.
     type Connection;
 
+    /// Your Juniper context type.
+    type Context;
+
     /// Perform the load.
-    fn load(ids: &[T], args: &Args, db: &Self::Connection) -> Result<Vec<Self>, Self::Error>;
+    fn load(
+        ids: &[T],
+        args: &Args,
+        context: &Self::Context,
+        db: &Self::Connection,
+    ) -> Result<Vec<Self>, Self::Error>;
 }
 
 /// The kinds of errors that can happen when doing eager loading.

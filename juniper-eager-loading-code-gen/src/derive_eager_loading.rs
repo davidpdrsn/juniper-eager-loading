@@ -56,6 +56,7 @@ impl DeriveData {
         let id = self.id();
         let connection = self.connection();
         let error = self.error();
+        let context = self.context();
 
         let field_setters = self.struct_fields().map(|field| {
             let ident = &field.ident;
@@ -73,6 +74,7 @@ impl DeriveData {
                 type Id = #id;
                 type Connection = #connection;
                 type Error = #error;
+                type Context = #context;
 
                 fn new_from_model(model: &Self::Model) -> Self {
                     Self {
@@ -103,7 +105,7 @@ impl DeriveData {
         let association_impl = self.association_impl(&data);
         let is_child_of_impl = self.is_child_of_impl(&data);
 
-        let context = self.field_context_name(&field);
+        let context = self.field_impl_context_name(&field);
 
         let full_output = quote! {
             #[allow(missing_docs, dead_code)]
@@ -221,7 +223,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)?;
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, context, db)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -236,7 +238,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, db)?;
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, context, db)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -255,7 +257,7 @@ impl DeriveData {
 
                 quote! {
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, context, db)?;
 
                     #filter
 
@@ -276,12 +278,12 @@ impl DeriveData {
 
                 quote! {
                     let join_models: Vec<#join_model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, db)?;
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, context, db)?;
 
                     #filter
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, db)?;
+                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, context, db)?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -296,7 +298,9 @@ impl DeriveData {
                         }
                     }
 
-                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildAndJoinModels(child_and_join_model_pairs))
+                    Ok(juniper_eager_loading::LoadChildrenOutput::ChildAndJoinModels(
+                        child_and_join_model_pairs
+                    ))
                 }
             }
         };
@@ -306,6 +310,7 @@ impl DeriveData {
             fn load_children(
                 models: &[Self::Model],
                 field_args: &Self::FieldArguments,
+                context: &Self::Context,
                 db: &Self::Connection,
             ) -> Result<
                 juniper_eager_loading::LoadChildrenOutput<
@@ -366,6 +371,7 @@ impl DeriveData {
                 child: &#inner_type,
                 join_model: &#join_model,
                 _field_args: &Self::FieldArguments,
+                context: &Self::Context,
             ) -> bool {
                 #is_child_of_impl
             }
@@ -399,6 +405,7 @@ impl DeriveData {
                     models: &[Self::Model],
                     db: &Self::Connection,
                     trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
+                    context: &Self::Context,
                 ) -> Result<(), Self::Error> {
                     #(#eager_load_children_calls)*
 
@@ -428,18 +435,19 @@ impl DeriveData {
             });
         let field_args_name = quote::format_ident!("{}_args", field_name);
 
-        let context = self.field_context_name(&field);
+        let impl_context = self.field_impl_context_name(&field);
 
         Some(quote! {
             if let Some(child_trail) = trail.#field_name().walk() {
                 let field_args = trail.#field_args_name();
 
-                EagerLoadChildrenOfType::<#inner_type, #context, _>::eager_load_children(
+                EagerLoadChildrenOfType::<#inner_type, #impl_context, _>::eager_load_children(
                     nodes,
                     models,
                     db,
                     &child_trail,
                     &field_args,
+                    &context,
                 )?;
             }
         })
@@ -465,6 +473,10 @@ impl DeriveData {
         self.args.error()
     }
 
+    fn context(&self) -> TokenStream {
+        self.args.context()
+    }
+
     fn root_model_field(&self) -> TokenStream {
         self.args.root_model_field(&self.struct_name())
     }
@@ -485,7 +497,7 @@ impl DeriveData {
         }
     }
 
-    fn field_context_name(&self, field: &syn::Field) -> Ident {
+    fn field_impl_context_name(&self, field: &syn::Field) -> Ident {
         let camel_name = field
             .ident
             .as_ref()
