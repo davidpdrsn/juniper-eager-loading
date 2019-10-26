@@ -30,6 +30,13 @@ None.
 - `EagerLoadChildrenOfType::association` has been added. This methods allows for some boilerplate to be removed from `EagerLoadChildrenOfType`.
 - `EagerLoadChildrenOfType::loaded_child` and `EagerLoadChildrenOfType::assert_loaded_otherwise_failed` has been removed and implemented generically using the new `Association` trait.
 - The deprecated macro `impl_load_from_for_diesel` has been removed completely. Use `impl_load_from_for_diesel_{pg|mysql|sqlite}` instead.
+- Support eager loading GraphQL fields that take arguments. See the docs for more information and examples.
+  - Add `EagerLoadChildrenOfType::FieldArguments`
+  - The following methods take the arguments:
+    - `EagerLoadChildrenOfType::load_children`
+    - `EagerLoadChildrenOfType::is_child_of`
+    - `EagerLoadChildrenOfType::eager_load_children`
+  - Add second generic argument to `LoadFrom` which will be the arguments and accept argument of that type in `LoadFrom::load`.
 
 If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
 ## [0.3.1] - 2019-10-09
