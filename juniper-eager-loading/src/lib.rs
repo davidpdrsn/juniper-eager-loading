@@ -1,8 +1,6 @@
 //! juniper-eager-loading is a library for avoiding N+1 query bugs designed to work with
 //! [Juniper][] and [juniper-from-schema][].
 //!
-//! <center>🚨 **This library is still experimental and everything is subject to change** 🚨</center>
-//!
 //! It is designed to make the most common assocation setups easy to handle and while being
 //! flexible and allowing you to customize things as needed. It is also 100% data store agnostic.
 //! So regardless if your API is backed by an SQL database or another API you can still use this

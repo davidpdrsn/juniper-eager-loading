@@ -1,6 +1,5 @@
 # [juniper-eager-loading](https://crates.io/crates/juniper-eager-loading)
 
-🚨 **This library is still experimental and everything is subject to change** 🚨
 
 This is a library for avoiding N+1 query bugs designed to work with
 [Juniper][] and [juniper-from-schema][].
