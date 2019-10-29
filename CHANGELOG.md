@@ -6,12 +6,16 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-- The [examples](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/examples) has been much improved.
-- Remove warning about this library being experimental. It is safe to use in production (:
+None.
 
 ### Breaking changes
 
 None.
+
+## [0.4.1] - 2019-10-29
+
+- The [examples](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/examples) has been much improved.
+- Remove warning about this library being experimental. It is safe to use in production (:
 
 ## [0.4.0] - 2019-10-23
 
