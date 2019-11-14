@@ -6,11 +6,15 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-- Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.
+None.
 
 ### Breaking changes
 
 None.
+
+## [0.4.2] - 2019-11-14
+
+- Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.
 
 ## [0.4.1] - 2019-10-29
 
@@ -104,6 +108,8 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 Initial release.
 
+[0.4.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.1...0.4.2
+[0.4.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.1...0.4.0
 [0.3.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.2.0...0.3.0
