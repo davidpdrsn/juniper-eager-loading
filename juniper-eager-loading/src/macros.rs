@@ -54,10 +54,21 @@
 ///     company_id: i32,
 /// }
 ///
+/// struct Context {
+///     db: PgConnection,
+/// }
+///
+/// impl Context {
+///     // The macro assumes this method exists
+///     fn db(&self) -> &PgConnection {
+///         &self.db
+///     }
+/// }
+///
 /// impl_load_from_for_diesel_pg! {
 ///     (
 ///         error = diesel::result::Error,
-///         connection = PgConnection,
+///         context = Context,
 ///     ) => {
 ///         i32 -> (users, User),
 ///         i32 -> (companies, Company),
@@ -79,7 +90,7 @@
 /// ```text
 /// (
 ///     error = diesel::result::Error,
-///     connection = PgConnection,
+///     context = Context,
 /// ) => {
 ///     // ...
 /// }
@@ -149,17 +160,24 @@
 /// #     user_id: i32,
 /// #     company_id: i32,
 /// # }
+/// # struct Context { db: PgConnection }
+/// # impl Context {
+/// #     fn db(&self) -> &PgConnection {
+/// #         &self.db
+/// #     }
+/// # }
+///
 /// // i32 -> (users, User),
 /// impl juniper_eager_loading::LoadFrom<i32> for User {
 ///     type Error = diesel::result::Error;
-///     type Connection = PgConnection;
+///     type Context = Context;
 ///
-///     fn load(ids: &[i32], field_args: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+///     fn load(ids: &[i32], field_args: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
 ///         use diesel::pg::expression::dsl::any;
 ///
 ///         users::table
 ///             .filter(users::id.eq(any(ids)))
-///             .load::<User>(db)
+///             .load::<User>(ctx.db())
 ///             .map_err(From::from)
 ///     }
 /// }
@@ -167,15 +185,15 @@
 /// // User.id -> (employments.user_id, Employment),
 /// impl juniper_eager_loading::LoadFrom<User> for Employment {
 ///     type Error = diesel::result::Error;
-///     type Connection = PgConnection;
+///     type Context = Context;
 ///
-///     fn load(froms: &[User], field_args: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+///     fn load(froms: &[User], field_args: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
 ///         use diesel::pg::expression::dsl::any;
 ///
 ///         let from_ids = froms.iter().map(|other| other.id).collect::<Vec<_>>();
 ///         employments::table
 ///             .filter(employments::user_id.eq(any(from_ids)))
-///             .load(db)
+///             .load(ctx.db())
 ///             .map_err(From::from)
 ///     }
 /// }
@@ -243,10 +261,21 @@ macro_rules! impl_load_from_for_diesel_pg {
 ///     company_id: i32,
 /// }
 ///
+/// struct Context {
+///     db: MysqlConnection,
+/// }
+///
+/// impl Context {
+///     // The macro assumes this method exists
+///     fn db(&self) -> &MysqlConnection {
+///         &self.db
+///     }
+/// }
+///
 /// impl_load_from_for_diesel_mysql! {
 ///     (
 ///         error = diesel::result::Error,
-///         connection = MysqlConnection,
+///         context = Context,
 ///     ) => {
 ///         i32 -> (users, User),
 ///         i32 -> (companies, Company),
@@ -323,10 +352,21 @@ macro_rules! impl_load_from_for_diesel_mysql {
 ///     company_id: i32,
 /// }
 ///
+/// struct Context {
+///     db: SqliteConnection,
+/// }
+///
+/// impl Context {
+///     // The macro assumes this method exists
+///     fn db(&self) -> &SqliteConnection {
+///         &self.db
+///     }
+/// }
+///
 /// impl_load_from_for_diesel_sqlite! {
 ///     (
 ///         error = diesel::result::Error,
-///         connection = SqliteConnection,
+///         context = Context,
 ///     ) => {
 ///         i32 -> (users, User),
 ///         i32 -> (companies, Company),

@@ -54,9 +54,8 @@ impl DeriveData {
         let struct_name = self.struct_name();
         let model = self.model();
         let id = self.id();
-        let connection = self.connection();
-        let error = self.error();
         let context = self.context();
+        let error = self.error();
 
         let field_setters = self.struct_fields().map(|field| {
             let ident = &field.ident;
@@ -72,9 +71,8 @@ impl DeriveData {
             impl juniper_eager_loading::GraphqlNodeForModel for #struct_name {
                 type Model = #model;
                 type Id = #id;
-                type Connection = #connection;
-                type Error = #error;
                 type Context = #context;
+                type Error = #error;
 
                 fn new_from_model(model: &Self::Model) -> Self {
                     Self {
@@ -223,7 +221,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, context, db)?;
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -238,7 +236,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, context, db)?;
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -248,7 +246,7 @@ impl DeriveData {
                     quote! {
                         let child_models = child_models
                             .into_iter()
-                            .filter(|child_model| child_model.#predicate_method(db))
+                            .filter(|child_model| child_model.#predicate_method(ctx))
                             .collect::<Vec<_>>();
                     }
                 } else {
@@ -257,7 +255,7 @@ impl DeriveData {
 
                 quote! {
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, context, db)?;
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
 
                     #filter
 
@@ -269,7 +267,7 @@ impl DeriveData {
                     quote! {
                         let join_models = join_models
                             .into_iter()
-                            .filter(|child_model| child_model.#predicate_method(db))
+                            .filter(|child_model| child_model.#predicate_method(ctx))
                             .collect::<Vec<_>>();
                     }
                 } else {
@@ -278,12 +276,12 @@ impl DeriveData {
 
                 quote! {
                     let join_models: Vec<#join_model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, context, db)?;
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
 
                     #filter
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, context, db)?;
+                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, ctx)?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -310,8 +308,7 @@ impl DeriveData {
             fn load_children(
                 models: &[Self::Model],
                 field_args: &Self::FieldArguments,
-                context: &Self::Context,
-                db: &Self::Connection,
+                ctx: &Self::Context,
             ) -> Result<
                 juniper_eager_loading::LoadChildrenOutput<
                     <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model,
@@ -403,9 +400,8 @@ impl DeriveData {
                 fn eager_load_all_children_for_each(
                     nodes: &mut [Self],
                     models: &[Self::Model],
-                    db: &Self::Connection,
+                    ctx: &Self::Context,
                     trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-                    context: &Self::Context,
                 ) -> Result<(), Self::Error> {
                     #(#eager_load_children_calls)*
 
@@ -444,10 +440,9 @@ impl DeriveData {
                 EagerLoadChildrenOfType::<#inner_type, #impl_context, _>::eager_load_children(
                     nodes,
                     models,
-                    db,
+                    &ctx,
                     &child_trail,
                     &field_args,
-                    &context,
                 )?;
             }
         })
@@ -465,16 +460,12 @@ impl DeriveData {
         self.args.id()
     }
 
-    fn connection(&self) -> TokenStream {
-        self.args.connection()
+    fn context(&self) -> TokenStream {
+        self.args.context()
     }
 
     fn error(&self) -> TokenStream {
         self.args.error()
-    }
-
-    fn context(&self) -> TokenStream {
-        self.args.context()
     }
 
     fn root_model_field(&self) -> TokenStream {

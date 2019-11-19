@@ -74,12 +74,12 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<Employment> for Company {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             employments: &[Employment],
             _field_args: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::companies::dsl::*;
             use diesel::pg::expression::dsl::any;
@@ -91,18 +91,18 @@ mod models {
 
             companies
                 .filter(id.eq(any(company_ids)))
-                .load::<Company>(db)
+                .load::<Company>(&ctx.db)
         }
     }
 
     impl juniper_eager_loading::LoadFrom<User> for Employment {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             users: &[User],
             _field_args: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::employments::dsl::*;
             use diesel::pg::expression::dsl::any;
@@ -111,7 +111,7 @@ mod models {
 
             employments
                 .filter(user_id.eq(any(user_ids)))
-                .load::<Employment>(db)
+                .load::<Employment>(&ctx.db)
         }
     }
 }
@@ -124,10 +124,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let db = &executor.context().db;
-        let country_models = db_schema::users::table.load::<models::User>(db)?;
+        let ctx = executor.context();
+        let country_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
         let mut country = User::from_db_models(&country_models);
-        User::eager_load_all_children_for_each(&mut country, &country_models, db, trail)?;
+        User::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
 
         Ok(country)
     }
@@ -140,7 +140,7 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct User {
     user: models::User,
 
@@ -163,7 +163,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct Company {
     company: models::Company,
 }

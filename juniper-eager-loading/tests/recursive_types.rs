@@ -39,10 +39,11 @@ mod models {
 
     impl LoadFrom<i32> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let models = db
+        fn load(ids: &[i32], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -72,9 +73,10 @@ impl QueryFields for Query {
         executor: &Executor<'a, Context>,
         trail: &QueryTrail<'a, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let db = &executor.context().db;
+        let ctx = executor.context();
 
-        let mut user_models = db
+        let mut user_models = ctx
+            .db
             .users
             .all_values()
             .into_iter()
@@ -83,14 +85,14 @@ impl QueryFields for Query {
         user_models.sort_by_key(|user| user.id);
 
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
 
         Ok(users)
     }
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
 pub struct User {
     user: models::User,
 

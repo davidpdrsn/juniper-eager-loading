@@ -64,10 +64,11 @@ mod models {
 
     impl LoadFrom<i32> for Country {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let models = db
+        fn load(ids: &[i32], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let models = ctx
+                .db
                 .countries
                 .all_values()
                 .into_iter()
@@ -99,25 +100,27 @@ impl QueryFields for Query {
         executor: &Executor<'a, Context>,
         trail: &QueryTrail<'a, HasCountry, Walked>,
     ) -> FieldResult<Vec<HasCountry>> {
-        let db = &executor.context().db;
+        let ctx = executor.context();
 
-        let mut user_models = db
+        let mut user_models = ctx
+            .db
             .users
             .all_values()
             .into_iter()
             .cloned()
             .collect::<Vec<_>>();
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, &trail.downcast())?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, &ctx, &trail.downcast())?;
 
-        let mut city_models = db
+        let mut city_models = ctx
+            .db
             .cities
             .all_values()
             .into_iter()
             .cloned()
             .collect::<Vec<_>>();
         let mut cities = City::from_db_models(&city_models);
-        City::eager_load_all_children_for_each(&mut cities, &city_models, db, &trail.downcast())?;
+        City::eager_load_all_children_for_each(&mut cities, &city_models, &ctx, &trail.downcast())?;
 
         let mut has_countries = vec![];
         has_countries.extend(users.into_iter().map(HasCountry::from).collect::<Vec<_>>());
@@ -128,7 +131,7 @@ impl QueryFields for Query {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
 pub struct User {
     user: models::User,
     #[has_one(default)]
@@ -150,7 +153,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
 pub struct City {
     city: models::City,
     #[has_one(default)]
@@ -172,7 +175,7 @@ impl CityFields for City {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
 pub struct Country {
     country: models::Country,
 }

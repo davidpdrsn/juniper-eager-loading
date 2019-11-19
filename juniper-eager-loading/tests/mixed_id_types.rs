@@ -49,10 +49,11 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let models = db
+        fn load(ids: &[i32], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -65,10 +66,11 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i64> for Country {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i64], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let countries = db
+        fn load(ids: &[i64], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let countries = ctx
+                .db
                 .countries
                 .all_values()
                 .into_iter()
@@ -81,11 +83,12 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<User> for Visit {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(users: &[User], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(users: &[User], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
             let user_ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
-            let visits = db
+            let visits = ctx
+                .db
                 .visits
                 .iter()
                 .filter(|visit| user_ids.contains(&visit.person_id))
@@ -97,14 +100,15 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<Visit> for Country {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(visits: &[Visit], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
+        fn load(visits: &[Visit], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
             let country_ids = visits
                 .iter()
                 .map(|visit| visit.country_id)
                 .collect::<Vec<_>>();
-            let countries = db
+            let countries = ctx
+                .db
                 .countries
                 .all_values()
                 .into_iter()
@@ -136,9 +140,10 @@ impl QueryFields for Query {
         executor: &Executor<'a, Context>,
         trail: &QueryTrail<'a, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let db = &executor.context().db;
+        let ctx = executor.context();
 
-        let mut user_models = db
+        let mut user_models = ctx
+            .db
             .users
             .all_values()
             .into_iter()
@@ -147,7 +152,7 @@ impl QueryFields for Query {
         user_models.sort_by_key(|user| user.id);
 
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
 
         Ok(users)
     }
@@ -155,7 +160,7 @@ impl QueryFields for Query {
 
 // The default values are commented out
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(connection = "Db", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
 pub struct User {
     user: models::User,
 
@@ -192,7 +197,7 @@ impl UserFields for User {
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
     model = "models::Country",
-    connection = "Db",
+    context = "Context",
     id = "i64",
     error = "Box<dyn std::error::Error>",
     root_model_field = "country"

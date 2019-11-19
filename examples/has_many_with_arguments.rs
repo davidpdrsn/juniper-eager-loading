@@ -67,12 +67,12 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<Country, super::CountryUsersArgs<'_>> for User {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             countries: &[Country],
             field_args: &super::CountryUsersArgs<'_>,
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::users::dsl::*;
             use diesel::pg::expression::dsl::any;
@@ -85,7 +85,7 @@ mod models {
             users
                 .filter(country_id.eq(any(country_ids)))
                 .filter(last_active_last.gt(field_args.active_since()))
-                .load::<User>(db)
+                .load::<User>(&ctx.db)
         }
     }
 }
@@ -98,10 +98,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<Vec<Country>> {
-        let db = &executor.context().db;
-        let country_models = db_schema::countries::table.load::<models::Country>(db)?;
+        let ctx = executor.context();
+        let country_models = db_schema::countries::table.load::<models::Country>(&ctx.db)?;
         let mut country = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut country, &country_models, db, trail)?;
+        Country::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
 
         Ok(country)
     }
@@ -114,7 +114,7 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct User {
     user: models::User,
 }
@@ -126,7 +126,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct Country {
     country: models::Country,
 
@@ -158,9 +158,9 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
     fn load_children(
         models: &[Self::Model],
         field_args: &Self::FieldArguments,
-        db: &Self::Connection,
+        ctx: &Self::Context,
     ) -> Result<LoadChildrenOutput<models::User, ()>, Self::Error> {
-        let child_models: Vec<models::User> = LoadFrom::load(&models, field_args, db)?;
+        let child_models: Vec<models::User> = LoadFrom::load(&models, field_args, ctx)?;
         Ok(LoadChildrenOutput::ChildModels(child_models))
     }
 
@@ -169,6 +169,7 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
         child: &User,
         _join_model: &(),
         _field_args: &Self::FieldArguments,
+        _ctx: &Self::Context,
     ) -> bool {
         node.country.id == child.user.country_id
     }

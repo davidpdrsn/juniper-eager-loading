@@ -61,12 +61,12 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<Country> for User {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             countries: &[Country],
             _field_args: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::users::dsl::*;
             use diesel::pg::expression::dsl::any;
@@ -78,7 +78,7 @@ mod models {
 
             users
                 .filter(country_id.eq(any(country_ids)))
-                .load::<User>(db)
+                .load::<User>(&ctx.db)
         }
     }
 }
@@ -91,10 +91,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<Vec<Country>> {
-        let db = &executor.context().db;
-        let country_models = db_schema::countries::table.load::<models::Country>(db)?;
+        let ctx = executor.context();
+        let country_models = db_schema::countries::table.load::<models::Country>(&ctx.db)?;
         let mut country = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut country, &country_models, db, trail)?;
+        Country::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
 
         Ok(country)
     }
@@ -140,7 +140,7 @@ impl CountryFields for Country {
 impl GraphqlNodeForModel for User {
     type Model = models::User;
     type Id = i32;
-    type Connection = PgConnection;
+    type Context = Context;
     type Error = diesel::result::Error;
 
     fn new_from_model(model: &Self::Model) -> Self {
@@ -154,7 +154,7 @@ impl EagerLoadAllChildren for User {
     fn eager_load_all_children_for_each(
         nodes: &mut [Self],
         models: &[Self::Model],
-        db: &Self::Connection,
+        ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -164,7 +164,7 @@ impl EagerLoadAllChildren for User {
 impl GraphqlNodeForModel for Country {
     type Model = models::Country;
     type Id = i32;
-    type Connection = PgConnection;
+    type Context = Context;
     type Error = diesel::result::Error;
 
     fn new_from_model(model: &Self::Model) -> Self {
@@ -179,7 +179,7 @@ impl EagerLoadAllChildren for Country {
     fn eager_load_all_children_for_each(
         nodes: &mut [Self],
         models: &[Self::Model],
-        db: &Self::Connection,
+        ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<(), Self::Error> {
         if let Some(child_trail) = trail.users().walk() {
@@ -189,7 +189,7 @@ impl EagerLoadAllChildren for Country {
                 User,
                 EagerLoadingContextCountryForUsers,
                 _,
-            >::eager_load_children(nodes, models, db, &child_trail, &field_args)?;
+            >::eager_load_children(nodes, models, ctx, &child_trail, &field_args)?;
         }
 
         Ok(())
@@ -204,9 +204,9 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
     fn load_children(
         models: &[Self::Model],
         field_args: &Self::FieldArguments,
-        db: &Self::Connection,
+        ctx: &Self::Context,
     ) -> Result<LoadChildrenOutput<models::User, ()>, Self::Error> {
-        let child_models: Vec<models::User> = LoadFrom::load(&models, field_args, db)?;
+        let child_models: Vec<models::User> = LoadFrom::load(&models, field_args, ctx)?;
         Ok(LoadChildrenOutput::ChildModels(child_models))
     }
 
@@ -215,6 +215,7 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
         child: &User,
         _join_model: &(),
         _field_args: &Self::FieldArguments,
+        _ctx: &Self::Context,
     ) -> bool {
         node.country.id == child.user.country_id
     }

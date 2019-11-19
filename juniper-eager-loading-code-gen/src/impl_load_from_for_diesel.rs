@@ -31,13 +31,13 @@ pub enum Backend {
 
 mod kw {
     syn::custom_keyword!(error);
-    syn::custom_keyword!(connection);
+    syn::custom_keyword!(context);
 }
 
 #[derive(Debug)]
 struct Input {
     error_ty: Type,
-    connection_ty: Type,
+    context_ty: Type,
     impls: Punctuated<InputImpl, Token![,]>,
 }
 
@@ -52,9 +52,9 @@ impl Parse for Input {
 
         prelude.parse::<Token![,]>()?;
 
-        prelude.parse::<kw::connection>()?;
+        prelude.parse::<kw::context>()?;
         prelude.parse::<Token![=]>()?;
-        let connection_ty = prelude.parse::<Type>()?;
+        let context_ty = prelude.parse::<Type>()?;
 
         if prelude.peek(Token![,]) {
             prelude.parse::<Token![,]>()?;
@@ -68,7 +68,7 @@ impl Parse for Input {
 
         Ok(Self {
             error_ty,
-            connection_ty,
+            context_ty,
             impls,
         })
     }
@@ -153,7 +153,7 @@ impl InputImpl {
 impl HasOne {
     fn gen_tokens(&self, input: &Input, backend: &Backend, out: &mut TokenStream) {
         let error_ty = &input.error_ty;
-        let connection_ty = &input.connection_ty;
+        let context_ty = &input.context_ty;
 
         let id_ty = &self.id_ty;
         let self_ty = &self.self_ty;
@@ -175,16 +175,16 @@ impl HasOne {
         out.extend(quote! {
             impl juniper_eager_loading::LoadFrom<#id_ty> for #self_ty {
                 type Error = #error_ty;
-                type Connection = #connection_ty;
+                type Context = #context_ty;
 
                 fn load(
                     ids: &[#id_ty],
                     _field_args: &(),
-                    db: &Self::Connection,
+                    ctx: &Self::Context,
                 ) -> Result<Vec<Self>, Self::Error> {
                     #table::table
                     .filter(#filter)
-                        .load::<#self_ty>(db)
+                        .load::<#self_ty>(ctx.db())
                         .map_err(From::from)
                 }
             }
@@ -195,7 +195,7 @@ impl HasOne {
 impl HasMany {
     fn gen_tokens(&self, input: &Input, backend: &Backend, out: &mut TokenStream) {
         let error_ty = &input.error_ty;
-        let connection_ty = &input.connection_ty;
+        let context_ty = &input.context_ty;
 
         let join_ty = &self.join_ty;
         let join_from = &self.join_from;
@@ -219,12 +219,12 @@ impl HasMany {
         out.extend(quote! {
             impl juniper_eager_loading::LoadFrom<#join_ty> for #self_ty {
                 type Error = #error_ty;
-                type Connection = #connection_ty;
+                type Context = #context_ty;
 
                 fn load(
                     froms: &[#join_ty],
                     _field_args: &(),
-                    db: &Self::Connection,
+                    ctx: &Self::Context,
                 ) -> Result<Vec<Self>, Self::Error> {
                     let from_ids = froms
                         .iter()
@@ -233,7 +233,7 @@ impl HasMany {
 
                     #table::table
                         .filter(#filter)
-                        .load(db)
+                        .load(ctx.db())
                         .map_err(From::from)
                 }
             }

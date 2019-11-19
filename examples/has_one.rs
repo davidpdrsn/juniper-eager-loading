@@ -61,17 +61,17 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             ids: &[i32],
             _field_args: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::countries::dsl::*;
             use diesel::pg::expression::dsl::any;
 
-            countries.filter(id.eq(any(ids))).load::<Country>(db)
+            countries.filter(id.eq(any(ids))).load::<Country>(&ctx.db)
         }
     }
 }
@@ -84,10 +84,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let db = &executor.context().db;
-        let user_models = db_schema::users::table.load::<models::User>(db)?;
+        let ctx = executor.context();
+        let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
 
         Ok(users)
     }
@@ -100,7 +100,7 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct User {
     user: models::User,
 
@@ -128,7 +128,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(connection = "PgConnection", error = "diesel::result::Error")]
+#[eager_loading(context = "Context", error = "diesel::result::Error")]
 pub struct Country {
     country: models::Country,
 }

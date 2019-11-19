@@ -20,12 +20,10 @@ pub struct DeriveArgs {
     model: Option<syn::Path>,
     #[darling(default)]
     id: Option<syn::Path>,
-    connection: syn::Path,
+    context: syn::Path,
     error: syn::Path,
     #[darling(default)]
     root_model_field: Option<syn::Ident>,
-    #[darling(default)]
-    context: Option<syn::Path>,
 
     // TODO: Document this new attribute
     #[darling(default)]
@@ -33,7 +31,7 @@ pub struct DeriveArgs {
 }
 
 impl DeriveArgs {
-    token_stream_getter!(connection);
+    token_stream_getter!(context);
     token_stream_getter!(error);
 
     pub fn model(&self, struct_name: &syn::Ident) -> TokenStream {
@@ -59,14 +57,6 @@ impl DeriveArgs {
             let struct_name = struct_name.to_string().to_snake_case();
             let struct_name = Ident::new(&struct_name, Span::call_site());
             quote! { #struct_name }
-        }
-    }
-
-    pub fn context(&self) -> TokenStream {
-        if let Some(inner) = &self.context {
-            quote! { #inner }
-        } else {
-            quote! { Context }
         }
     }
 

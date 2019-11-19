@@ -61,17 +61,17 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
         type Error = diesel::result::Error;
-        type Connection = PgConnection;
+        type Context = super::Context;
 
         fn load(
             ids: &[i32],
             _field_args: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             use crate::db_schema::countries::dsl::*;
             use diesel::pg::expression::dsl::any;
 
-            countries.filter(id.eq(any(ids))).load::<Country>(db)
+            countries.filter(id.eq(any(ids))).load::<Country>(&ctx.db)
         }
     }
 }
@@ -84,10 +84,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let db = &executor.context().db;
-        let user_models = db_schema::users::table.load::<models::User>(db)?;
+        let ctx = executor.context();
+        let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
         let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, db, trail)?;
+        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
 
         Ok(users)
     }
@@ -133,7 +133,7 @@ impl CountryFields for Country {
 impl GraphqlNodeForModel for User {
     type Model = models::User;
     type Id = i32;
-    type Connection = PgConnection;
+    type Context = Context;
     type Error = diesel::result::Error;
 
     fn new_from_model(model: &Self::Model) -> Self {
@@ -148,7 +148,7 @@ impl EagerLoadAllChildren for User {
     fn eager_load_all_children_for_each(
         nodes: &mut [User],
         models: &[models::User],
-        db: &PgConnection,
+        ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<(), Self::Error> {
         if let Some(child_trail) = trail.country().walk() {
@@ -157,7 +157,7 @@ impl EagerLoadAllChildren for User {
             EagerLoadChildrenOfType::<
                 Country,
                 EagerLoadingContextUserForCountry,
-            _>::eager_load_children(nodes, models, db, &child_trail, &field_args)?;
+            _>::eager_load_children(nodes, models, ctx, &child_trail, &field_args)?;
         }
         Ok(())
     }
@@ -171,7 +171,7 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
     fn load_children(
         models: &[models::User],
         field_args: &Self::FieldArguments,
-        db: &PgConnection,
+        ctx: &Self::Context,
     ) -> Result<LoadChildrenOutput<models::Country>, diesel::result::Error> {
         let ids = models
             .iter()
@@ -179,7 +179,7 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
             .collect::<Vec<_>>();
         let ids = juniper_eager_loading::unique(ids);
 
-        let child_models: Vec<models::Country> = LoadFrom::load(&ids, field_args, db)?;
+        let child_models: Vec<models::Country> = LoadFrom::load(&ids, field_args, ctx)?;
 
         Ok(LoadChildrenOutput::ChildModels(child_models))
     }
@@ -189,6 +189,7 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
         child: &Country,
         _join_model: &(),
         _field_args: &Self::FieldArguments,
+        _ctx: &Self::Context,
     ) -> bool {
         node.user.country_id == child.country.id
     }
@@ -201,7 +202,7 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
 impl GraphqlNodeForModel for Country {
     type Model = models::Country;
     type Id = i32;
-    type Connection = PgConnection;
+    type Context = Context;
     type Error = diesel::result::Error;
 
     fn new_from_model(model: &Self::Model) -> Self {
@@ -215,7 +216,7 @@ impl EagerLoadAllChildren for Country {
     fn eager_load_all_children_for_each(
         nodes: &mut [Country],
         models: &[models::Country],
-        db: &PgConnection,
+        ctx: &Self::Context,
         trail: &QueryTrail<'_, Country, Walked>,
     ) -> Result<(), diesel::result::Error> {
         Ok(())

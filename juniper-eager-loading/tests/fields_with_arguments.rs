@@ -59,10 +59,11 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32> for Country {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let mut models = db
+        fn load(ids: &[i32], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let mut models = ctx
+                .db
                 .countries
                 .all_values()
                 .into_iter()
@@ -76,14 +77,15 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32, CountryUsersArgs<'_>> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
         fn load(
             ids: &[i32],
             field_args: &CountryUsersArgs,
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
-            let models = db
+            let models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -105,10 +107,11 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<i32> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
-        fn load(ids: &[i32], _: &(), db: &Self::Connection) -> Result<Vec<Self>, Self::Error> {
-            let mut models = db
+        fn load(ids: &[i32], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+            let mut models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -122,15 +125,16 @@ mod models {
 
     impl juniper_eager_loading::LoadFrom<Country> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
         fn load(
             countries: &[Country],
             _: &(),
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             let country_ids = countries.iter().map(|c| c.id).collect::<Vec<_>>();
-            let mut models = db
+            let mut models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -144,18 +148,19 @@ mod models {
 
     impl LoadFrom<Country, CountryUsersArgs<'_>> for User {
         type Error = Box<dyn std::error::Error>;
-        type Connection = super::Db;
+        type Context = super::Context;
 
         fn load(
             countries: &[Country],
             args: &CountryUsersArgs,
-            db: &Self::Connection,
+            ctx: &Self::Context,
         ) -> Result<Vec<Self>, Self::Error> {
             let only_admins = args.only_admins();
 
             let country_ids = countries.iter().map(|c| c.id).collect::<Vec<_>>();
 
-            let models = db
+            let models = ctx
+                .db
                 .users
                 .all_values()
                 .into_iter()
@@ -193,9 +198,10 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, Country, Walked>,
     ) -> FieldResult<Vec<Country>> {
-        let db = &executor.context().db;
+        let ctx = executor.context();
 
-        let mut country_models = db
+        let mut country_models = ctx
+            .db
             .countries
             .all_values()
             .into_iter()
@@ -204,7 +210,7 @@ impl QueryFields for Query {
         country_models.sort_by_key(|country| country.id);
 
         let mut countries = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut countries, &country_models, db, trail)?;
+        Country::eager_load_all_children_for_each(&mut countries, &country_models, ctx, trail)?;
 
         Ok(countries)
     }
@@ -223,7 +229,7 @@ impl MutationFields for Mutation {
 #[eager_loading(
     model = "models::User",
     id = "i32",
-    connection = "Db",
+    context = "Context",
     error = "Box<dyn std::error::Error>"
 )]
 pub struct User {
@@ -255,7 +261,7 @@ impl UserFields for User {
 #[eager_loading(
     model = "models::Country",
     id = "i32",
-    connection = "Db",
+    context = "Context",
     error = "Box<dyn std::error::Error>"
 )]
 pub struct Country {
@@ -274,12 +280,12 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
     fn load_children(
         models: &[Self::Model],
         field_args: &Self::FieldArguments,
-        db: &Self::Connection,
+        ctx: &Self::Context,
     ) -> Result<
         LoadChildrenOutput<<User as juniper_eager_loading::GraphqlNodeForModel>::Model, ()>,
         Self::Error,
     > {
-        let children = LoadFrom::load(&models, field_args, db)?;
+        let children = LoadFrom::load(&models, field_args, ctx)?;
         Ok(LoadChildrenOutput::ChildModels(children))
     }
 
@@ -288,6 +294,7 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
         child: &User,
         _join_model: &(),
         _field_args: &Self::FieldArguments,
+        _ctx: &Self::Context,
     ) -> bool {
         node.country.id == child.user.country_id
     }

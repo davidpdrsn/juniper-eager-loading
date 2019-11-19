@@ -42,10 +42,20 @@ struct Employment {
     company_id: i32,
 }
 
+struct Context {
+    db: SqliteConnection,
+}
+
+impl Context {
+    fn db(&self) -> &SqliteConnection {
+        &self.db
+    }
+}
+
 impl_load_from_for_diesel_mysql! {
     (
         error = diesel::result::Error,
-        connection = SqliteConnection,
+        context = Context,
     ) => {
         i32 -> (users, User),
         i32 -> (companies, Company),
