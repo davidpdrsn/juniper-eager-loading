@@ -218,7 +218,8 @@
 //!     // This trait is required for eager loading countries.
 //!     // It defines how to load a list of countries from a list of ids.
 //!     // Notice that `Context` is generic and can be whatever you want.
-//!     // This is this library can be data store agnostic.
+//!     // It will normally be your Juniper context which would contain
+//!     // a database connection.
 //!     impl LoadFrom<i32> for Country {
 //!         type Error = Box<dyn Error>;
 //!         type Context = super::Context;
@@ -245,7 +246,7 @@
 //!     }
 //! }
 //!
-//! // Our Juniper context type.
+//! // Our Juniper context type which contains a database connection.
 //! pub struct Context {
 //!     db: DbConnection,
 //! }
@@ -253,9 +254,9 @@
 //! impl juniper::Context for Context {}
 //!
 //! // Our GraphQL user type.
-//! // `#[derive(EagerLoading)]` takes care of all the heavy lifting.
+//! // `#[derive(EagerLoading)]` takes care of generating all the boilerplate code.
 //! #[derive(Clone, EagerLoading)]
-//! // You need to set the connection and error type.
+//! // You need to set the context and error type.
 //! #[eager_loading(context = "Context", error = "Box<dyn Error>")]
 //! pub struct User {
 //!     // This user model is used to resolve `User.id`
@@ -286,6 +287,7 @@
 //!         trail: &QueryTrail<'_, User, Walked>,
 //!     ) -> FieldResult<Vec<User>> {
 //!         let ctx = executor.context();
+//!
 //!         // Load the model users.
 //!         let user_models = ctx.db.load_all_users();
 //!
@@ -295,7 +297,7 @@
 //!         // Perform the eager loading.
 //!         // `trail` is used to only eager load the fields that are requested. Because
 //!         // we're using `QueryTrail`s from "juniper_from_schema" it would be a compile
-//!         // error if we eager loaded too much.
+//!         // error if we eager loaded associations that aren't requested in the query.
 //!         User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
 //!
 //!         Ok(users)
@@ -353,6 +355,9 @@
 //! of how to do that can be found
 //! [here](trait.EagerLoadChildrenOfType.html#manual-implementation).
 //!
+//! If you're interested in seeing full examples without any macros look
+//! [here](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/examples).
+//!
 //! [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 //!
 //! ## Attributes
@@ -361,7 +366,7 @@
 //!
 //! | Name | Description | Default | Example |
 //! |---|---|---|---|
-//! | `connection` | The type of connection your app uses. This could be a database connection or a connection to another web service. | N/A | `connection = "diesel::pg::PgConnection"` |
+//! | `context` | The type of your Juniper context. This will often hold your database connection or something else than can be used to load data. | N/A | `context = "Context"` |
 //! | `error` | The type of error eager loading might result in. | N/A | `error = "diesel::result::Error"` |
 //! | `model` | The model type behind your GraphQL struct | `models::{name of struct}` | `model = "crate::db::models::User"` |
 //! | `id` | Which id type does your app use? | `i32` | `id = "UUID"` |

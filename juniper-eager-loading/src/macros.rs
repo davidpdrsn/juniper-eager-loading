@@ -118,6 +118,30 @@
 /// [`HasMany`]: trait.HasMany.html
 /// [`HasManyThrough`]: trait.HasManyThrough.html
 ///
+/// # `Context::db`
+///
+/// It is required that your context type has a method called `db` which returns a reference to a
+/// Diesel connection that can be passed to `.load(_)`.
+///
+/// Example:
+///
+/// ```rust,ignore
+/// struct Context {
+///     db: PgConnection,
+/// }
+///
+/// impl Context {
+///     fn db(&self) -> &PgConnection {
+///         &self.db
+///     }
+/// }
+///
+/// // Whatever the method returns has to work with Diesel's `load` method
+/// users::table
+///     .filter(users::id.eq(any(user_ids)))
+///     .load::<User>(ctx.db())
+/// ```
+///
 /// # What gets generated
 ///
 /// The two syntaxes generates code like this:

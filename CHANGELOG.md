@@ -10,7 +10,38 @@ None.
 
 ### Breaking changes
 
-None.
+**Rename `GraphqlNodeForModel::Connection` to `Context`**
+
+You might need more than just a database connection to eager load data, for example the currently logged in user or other data about the HTTP request. Since `Connection` was previously generic it was technically possible but it was awkward in practice. `Connection` is now renamed to `Context` and is supposed to be your Juniper context which can contain whatever data you need.
+
+**`impl_load_from_for_diesel_(pg|mysql|sqlite)` syntax changed**
+
+The `impl_load_from_for_diesel_(pg|mysql|sqlite)` macro now requires `context = YourContextType` rather than `connection = YourConnectionType`.
+
+**Require `Context` to have `db` method for Diesel macro**
+
+`impl_load_from_for_diesel_(pg|mysql|sqlite)` now requires that your context type has a method called `db` that returns a reference to a Diesel connection.
+
+For example:
+
+```rust
+struct Context {
+    db: PgConnection,
+}
+
+impl Context {
+    fn db(&self) -> &PgConnection {
+        &self.db
+    }
+}
+
+// Whatever the method returns has to work with Diesel's `load` method
+users::table
+    .filter(users::id.eq(any(user_ids)))
+    .load::<User>(ctx.db())
+```
+
+This is _only_ necessary if you're using the `impl_load_from_for_diesel_(pg|mysql|sqlite)`.
 
 ## [0.4.2] - 2019-11-14
 
