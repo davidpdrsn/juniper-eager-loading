@@ -1,4 +1,5 @@
 #![allow(unused_variables, unused_imports, dead_code)]
+#![allow(clippy::let_unit_value)]
 
 #[macro_use]
 extern crate diesel;
