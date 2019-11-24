@@ -476,13 +476,15 @@ impl DeriveData {
         use syn::{Data, Fields};
 
         match &self.input.data {
-            Data::Union(_) => panic!("Factory can only be derived on structs"),
-            Data::Enum(_) => panic!("Factory can only be derived on structs"),
+            Data::Union(_) => panic!("EagerLoading can only be derived on structs"),
+            Data::Enum(_) => panic!("EagerLoading can only be derived on structs"),
             Data::Struct(data) => match &data.fields {
                 Fields::Named(named) => named.named.iter(),
-                Fields::Unit => panic!("Factory can only be derived on structs with named fields"),
+                Fields::Unit => {
+                    panic!("EagerLoading can only be derived on structs with named fields")
+                }
                 Fields::Unnamed(_) => {
-                    panic!("Factory can only be derived on structs with named fields")
+                    panic!("EagerLoading can only be derived on structs with named fields")
                 }
             },
         }
