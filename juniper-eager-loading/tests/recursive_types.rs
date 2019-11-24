@@ -92,14 +92,14 @@ impl QueryFields for Query {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct User {
     user: models::User,
 
-    #[has_one(root_model_field = "user")]
+    #[has_one(root_model_field = user)]
     parent: HasOne<Box<User>>,
 
-    #[option_has_one(root_model_field = "user")]
+    #[option_has_one(root_model_field = user)]
     grand_parent: OptionHasOne<Box<User>>,
 }
 

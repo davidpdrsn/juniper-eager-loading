@@ -227,10 +227,10 @@ impl MutationFields for Mutation {
 // The default values are commented out
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
 #[eager_loading(
-    model = "models::User",
-    id = "i32",
-    context = "Context",
-    error = "Box<dyn std::error::Error>"
+    model = models::User,
+    id = i32,
+    context = Context,
+    error = Box<dyn std::error::Error>,
 )]
 pub struct User {
     user: models::User,
@@ -259,10 +259,10 @@ impl UserFields for User {
 
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
-    model = "models::Country",
-    id = "i32",
-    context = "Context",
-    error = "Box<dyn std::error::Error>"
+    model = models::Country,
+    id = i32,
+    context = Context,
+    error = Box<dyn std::error::Error>,
 )]
 pub struct Country {
     country: models::Country,

@@ -107,7 +107,7 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct User {
     user: models::User,
 }
@@ -119,11 +119,11 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct Country {
     country: models::Country,
 
-    #[has_many(root_model_field = "user")]
+    #[has_many(root_model_field = user)]
     users: HasMany<User>,
 }
 

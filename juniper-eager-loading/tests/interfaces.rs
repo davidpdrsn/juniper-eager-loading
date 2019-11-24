@@ -131,7 +131,7 @@ impl QueryFields for Query {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct User {
     user: models::User,
     #[has_one(default)]
@@ -153,7 +153,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct City {
     city: models::City,
     #[has_one(default)]
@@ -175,7 +175,7 @@ impl CityFields for City {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct Country {
     country: models::Country,
 }

@@ -405,8 +405,8 @@ impl MutationFields for Mutation {
 // The default values are commented out
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
 #[eager_loading(
-    error = "Box<dyn std::error::Error>",
-    context = "Context",
+    error = Box<dyn std::error::Error>,
+    context = Context,
     // model = "models::User",
     // id = "i32",
     // root_model_field = "user"
@@ -415,47 +415,47 @@ pub struct User {
     user: models::User,
 
     // #[has_one(
-    //     foreign_key_field = "country_id",
-    //     root_model_field = "country"
+    //     foreign_key_field = country_id,
+    //     root_model_field = country
     // )]
     #[has_one(default)]
     country: HasOne<Country>,
 
     // #[has_one(
-    //     foreign_key_field = "city_id",
-    //     root_model_field = "city"
+    //     foreign_key_field = city_id,
+    //     root_model_field = city
     // )]
     #[option_has_one(default)]
     city: OptionHasOne<City>,
 
-    #[has_many(root_model_field = "employment")]
+    #[has_many(root_model_field = employment)]
     employments: HasMany<Employment>,
 
     #[has_many_through(
-        // model_field = "company",
-        // join_model_field = "employment"
-        join_model = "models::Employment",
+        // model_field = company,
+        // join_model_field = employment
+        join_model = models::Employment,
     )]
     companies: HasManyThrough<Company>,
 
     #[has_many(
-        root_model_field = "issue",
-        foreign_key_field = "reviewer_id",
+        root_model_field = issue,
+        foreign_key_field = reviewer_id,
         foreign_key_optional
     )]
     issues: HasMany<Issue>,
 
     #[has_many(
-        root_model_field = "employment",
-        graphql_field = "primaryEmployment",
-        predicate_method = "primary"
+        root_model_field = employment,
+        graphql_field = primaryEmployment,
+        predicate_method = primary
     )]
     primary_employments: HasMany<Employment>,
 
     #[has_many_through(
-        join_model = "models::Employment",
-        graphql_field = "primaryCompany",
-        predicate_method = "primary"
+        join_model = models::Employment,
+        graphql_field = primaryCompany,
+        predicate_method = primary
     )]
     primary_companies: HasManyThrough<Company>,
 }
@@ -543,18 +543,17 @@ impl UserFields for User {
 // #[derive(Clone, Eq, PartialEq, Debug)]
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
-    model = "models::Country",
-    context = "Context",
-    id = "i32",
-    error = "Box<dyn std::error::Error>",
-    root_model_field = "country"
+    model = models::Country,
+    context = Context,
+    id = i32,
+    error = Box<dyn std::error::Error>,
+    root_model_field = country
 )]
 pub struct Country {
     country: models::Country,
 
     #[has_many(
-        root_model_field = "city",
-        // association_type = "many_to_many",
+        root_model_field = city,
     )]
     cities: HasMany<City>,
 }
@@ -575,15 +574,15 @@ impl CountryFields for Country {
 
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
-    model = "models::City",
-    id = "i32",
-    context = "Context",
-    error = "Box<dyn std::error::Error>",
-    root_model_field = "city"
+    model = models::City,
+    id = i32,
+    context = Context,
+    error = Box<dyn std::error::Error>,
+    root_model_field = city
 )]
 pub struct City {
     city: models::City,
-    #[has_one(foreign_key_field = "country_id", root_model_field = "country")]
+    #[has_one(foreign_key_field = country_id, root_model_field = country)]
     country: HasOne<Country>,
 }
 
@@ -602,7 +601,7 @@ impl CityFields for City {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct Company {
     company: models::Company,
 }
@@ -618,7 +617,7 @@ impl CompanyFields for Company {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct Employment {
     employment: models::Employment,
     #[has_one(default)]
@@ -650,10 +649,10 @@ impl EmploymentFields for Employment {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct Issue {
     issue: models::Issue,
-    #[option_has_one(root_model_field = "user")]
+    #[option_has_one(root_model_field = user)]
     reviewer: OptionHasOne<User>,
 }
 

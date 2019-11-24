@@ -257,21 +257,33 @@
 //! // `#[derive(EagerLoading)]` takes care of generating all the boilerplate code.
 //! #[derive(Clone, EagerLoading)]
 //! // You need to set the context and error type.
-//! #[eager_loading(context = "Context", error = "Box<dyn Error>")]
+//! #[eager_loading(
+//!     context = Context,
+//!     error = Box<dyn Error>,
+//!
+//!     // These match the default so you wouldn't have to specify them
+//!     model = models::User,
+//!     id = i32,
+//!     root_model_field = user,
+//! )]
 //! pub struct User {
 //!     // This user model is used to resolve `User.id`
 //!     user: models::User,
 //!
 //!     // Setup a "has one" association between a user and a country.
-//!     // `default` will use all the default attribute values.
-//!     // Exacty what they are is explained below.
-//!     #[has_one(default)]
+//!     //
+//!     // We could also have used `#[has_one(default)]` here.
+//!     #[has_one(
+//!         foreign_key_field = country_id,
+//!         root_model_field = country,
+//!         graphql_field = country,
+//!     )]
 //!     country: HasOne<Country>,
 //! }
 //!
 //! // And the GraphQL country type.
 //! #[derive(Clone, EagerLoading)]
-//! #[eager_loading(context = "Context", error = "Box<dyn Error>")]
+//! #[eager_loading(context = Context, error = Box<dyn Error>)]
 //! pub struct Country {
 //!     country: models::Country,
 //! }
@@ -366,11 +378,11 @@
 //!
 //! | Name | Description | Default | Example |
 //! |---|---|---|---|
-//! | `context` | The type of your Juniper context. This will often hold your database connection or something else than can be used to load data. | N/A | `context = "Context"` |
-//! | `error` | The type of error eager loading might result in. | N/A | `error = "diesel::result::Error"` |
-//! | `model` | The model type behind your GraphQL struct | `models::{name of struct}` | `model = "crate::db::models::User"` |
-//! | `id` | Which id type does your app use? | `i32` | `id = "UUID"` |
-//! | `root_model_field` | The name of the field has holds the backing model | `{name of struct}` in snakecase. | `root_model_field = "user"` |
+//! | `context` | The type of your Juniper context. This will often hold your database connection or something else than can be used to load data. | N/A | `context = Context` |
+//! | `error` | The type of error eager loading might result in. | N/A | `error = diesel::result::Error` |
+//! | `model` | The model type behind your GraphQL struct | `models::{name of struct}` | `model = crate::db::models::User` |
+//! | `id` | Which id type does your app use? | `i32` | `id = UUID` |
+//! | `root_model_field` | The name of the field has holds the backing model | `{name of struct}` in snakecase. | `root_model_field = user` |
 //!
 //! # Associations
 //!
@@ -567,9 +579,9 @@ pub enum AssociationType {
 ///
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
-/// | `foreign_key_field` | The name of the foreign key field | `{name of field}_id` | `foreign_key_field = "country_id"` |
-/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | `{name of field}` | `root_model_field = "country"` |
-/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
+/// | `foreign_key_field` | The name of the foreign key field | `{name of field}_id` | `foreign_key_field = country_id` |
+/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | `{name of field}` | `root_model_field = country` |
+/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
 /// | `default` | Use the default value for all unspecified attributes | N/A | `default` |
 ///
 /// Additionally it also supports the attributes `print`, and `skip`. See the [root model
@@ -698,11 +710,11 @@ impl<T> OptionHasOne<T> {
 ///
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
-/// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = "user_id"` |
+/// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = user_id` |
 /// | `foreign_key_optional` | The foreign key type is optional | Not set | `foreign_key_optional` |
 /// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
-/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
-/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
+/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
+/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = a_predicate_method` |
 ///
 /// # Errors
 ///
@@ -764,11 +776,11 @@ impl<T> HasMany<T> {
 ///
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
-/// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = "company"` |
-/// | `join_model` | The model we have to join with | N/A | `join_model = "models::Employment"` |
-/// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = "employment"` |
-/// | `foreign_key_field` | The field on the join model that contains the parent models id | `{name of parent type in lowercase}_id` | `foreign_key_field = "car_id"` |
-/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = "country"` |
+/// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = company` |
+/// | `join_model` | The model we have to join with | N/A | `join_model = models::Employment` |
+/// | `join_model_field` | The field on the join model type that holds the model | `{name of join model type}` in snakecase | `join_model_field = employment` |
+/// | `foreign_key_field` | The field on the join model that contains the parent models id | `{name of parent type in lowercase}_id` | `foreign_key_field = car_id` |
+/// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
 ///
 /// # Errors
@@ -908,7 +920,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// # }
 /// #
 /// #[derive(Clone, EagerLoading)]
-/// #[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+/// #[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 /// pub struct User {
 ///     user: models::User,
 ///
@@ -919,7 +931,7 @@ pub trait GraphqlNodeForModel: Sized {
 /// }
 ///
 /// #[derive(Clone, EagerLoading)]
-/// #[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+/// #[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 /// pub struct Country {
 ///     country: models::Country,
 /// }

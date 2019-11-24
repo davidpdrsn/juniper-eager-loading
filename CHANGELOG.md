@@ -43,6 +43,58 @@ users::table
 
 This is _only_ necessary if you're using the `impl_load_from_for_diesel_(pg|mysql|sqlite)`.
 
+**Attribute values should no longer be surrounded by quotes**
+
+Before:
+
+```rust
+#[derive(Clone, EagerLoading)]
+#[eager_loading(
+    context = "Context",
+    error = "Box<dyn Error>",
+    model = "models::User",
+    id = "i32",
+    root_model_field = "user,"
+)]
+pub struct User {
+    user: models::User,
+    #[has_one(
+        foreign_key_field = "country_id,"
+        root_model_field = "country,"
+        graphql_field = "country,"
+    )]
+    country: HasOne<Country>,
+}
+```
+
+After:
+
+```rust
+#[derive(Clone, EagerLoading)]
+#[eager_loading(
+    context = Context,
+    error = Box<dyn Error>,
+    model = models::User,
+    id = i32,
+    root_model_field = user,
+)]
+pub struct User {
+    user: models::User,
+    #[has_one(
+        foreign_key_field = country_id,
+        root_model_field = country,
+        graphql_field = country,
+    )]
+    country: HasOne<Country>,
+}
+```
+
+This change is made for all attributes:
+- `#[has_one]`
+- `#[option_has_one]`
+- `#[has_many]`
+- `#[has_many_through]`
+
 ## [0.4.2] - 2019-11-14
 
 - Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.

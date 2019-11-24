@@ -100,15 +100,15 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct User {
     user: models::User,
 
     // these are the defaults. `#[has_one(default)]` would also work here.
     #[option_has_one(
-        foreign_key_field = "country_id",
-        root_model_field = "country",
-        graphql_field = "country"
+        foreign_key_field = country_id,
+        root_model_field = country,
+        graphql_field = country
     )]
     country: OptionHasOne<Country>,
 }
@@ -128,7 +128,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct Country {
     country: models::Country,
 }

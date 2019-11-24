@@ -140,11 +140,11 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct User {
     user: models::User,
 
-    #[has_many_through(join_model = "models::Employment")]
+    #[has_many_through(join_model = models::Employment)]
     companies: HasManyThrough<Company>,
 }
 
@@ -163,7 +163,7 @@ impl UserFields for User {
 }
 
 #[derive(Clone, EagerLoading)]
-#[eager_loading(context = "Context", error = "diesel::result::Error")]
+#[eager_loading(context = Context, error = diesel::result::Error)]
 pub struct Company {
     company: models::Company,
 }

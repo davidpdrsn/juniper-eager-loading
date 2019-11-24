@@ -160,14 +160,14 @@ impl QueryFields for Query {
 
 // The default values are commented out
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, EagerLoading)]
-#[eager_loading(context = "Context", error = "Box<dyn std::error::Error>")]
+#[eager_loading(context = Context, error = Box<dyn std::error::Error>)]
 pub struct User {
     user: models::User,
 
     #[has_one(default)]
     country: HasOne<Country>,
 
-    #[has_many_through(join_model = "models::Visit", foreign_key_field = "person_id")]
+    #[has_many_through(join_model = models::Visit, foreign_key_field = person_id)]
     visited_countries: HasManyThrough<Country>,
 }
 
@@ -196,11 +196,11 @@ impl UserFields for User {
 // #[derive(Clone, Eq, PartialEq, Debug)]
 #[derive(Clone, Eq, PartialEq, Debug, Ord, PartialOrd, EagerLoading)]
 #[eager_loading(
-    model = "models::Country",
-    context = "Context",
-    id = "i64",
-    error = "Box<dyn std::error::Error>",
-    root_model_field = "country"
+    model = models::Country,
+    context = Context,
+    id = i64,
+    error = Box<dyn std::error::Error>,
+    root_model_field = country
 )]
 pub struct Country {
     country: models::Country,

@@ -1,53 +1,71 @@
 mod field_args;
 
-use darling::{FromDeriveInput, FromMeta};
-use field_args::{DeriveArgs, FieldArgs, HasMany, HasManyThrough, HasOne, OptionHasOne};
+use field_args::{DeriveArgs, FieldArgs, HasMany, HasManyThrough, HasOne};
 use heck::{CamelCase, SnakeCase};
 use proc_macro2::{Span, TokenStream};
+use proc_macro_error::*;
 use quote::quote;
-use syn::{
-    parse_macro_input, DeriveInput, GenericArgument, Ident, NestedMeta, PathArguments, Type,
-};
+use syn::spanned::Spanned;
+use syn::{parse_macro_input, Fields, GenericArgument, Ident, ItemStruct, PathArguments, Type};
 
-pub fn gen_tokens(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    let args = match DeriveArgs::from_derive_input(&ast) {
-        Ok(args) => args,
-        Err(err) => panic!("{}", err),
+pub fn gen_tokens(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item_struct = parse_macro_input!(tokens as ItemStruct);
+    let item_struct_span = item_struct.span();
+
+    let ItemStruct {
+        ident: struct_name,
+        attrs,
+        fields,
+        ..
+    } = item_struct;
+
+    let mut args = None;
+    for attr in attrs {
+        match attr.path.get_ident() {
+            Some(i) if i == "eager_loading" => {
+                let parsed =
+                    syn::parse2::<DeriveArgs>(attr.tokens.clone()).unwrap_or_else(|e| abort!(e));
+                args = Some(parsed);
+            }
+            _ => {}
+        }
+    }
+    let args = args.unwrap_or_else(|| {
+        abort!(
+            item_struct_span,
+            "Struct missing #[eager_loading(...)] attribute"
+        );
+    });
+
+    let out = DeriveData {
+        struct_name,
+        args,
+        fields,
+        out: TokenStream::new(),
     };
 
-    let out = DeriveData::new(ast, args);
-    let tokens = out.build_derive_output();
-
-    tokens.into()
+    out.build_derive_output().into()
 }
 
 struct DeriveData {
-    input: DeriveInput,
+    struct_name: Ident,
+    fields: Fields,
     args: DeriveArgs,
-    tokens: TokenStream,
+    out: TokenStream,
 }
 
 impl DeriveData {
-    fn new(input: DeriveInput, args: DeriveArgs) -> Self {
-        Self {
-            input,
-            args,
-            tokens: quote! {},
-        }
-    }
-
     fn build_derive_output(mut self) -> TokenStream {
         self.gen_graphql_node_for_model();
         self.gen_eager_load_all_children();
 
         if self.args.print() {
-            eprintln!("{}", self.tokens);
+            eprintln!("{}", self.out);
         }
 
         self.gen_eager_load_children_of_type();
 
-        self.tokens
+        self.out
     }
 
     fn gen_graphql_node_for_model(&mut self) {
@@ -81,7 +99,7 @@ impl DeriveData {
                 }
             }
         };
-        self.tokens.extend(code);
+        self.out.extend(code);
     }
 
     fn gen_eager_load_children_of_type(&mut self) {
@@ -90,7 +108,7 @@ impl DeriveData {
             .filter_map(|field| self.gen_eager_load_children_of_type_for_field(field));
 
         let code = quote! { #(#impls)* };
-        self.tokens.extend(code);
+        self.out.extend(code);
     }
 
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
@@ -140,27 +158,85 @@ impl DeriveData {
 
         let args = match association_type {
             AssociationType::HasOne => {
-                let args = parse_field_args::<HasOne>(&field)
-                    .unwrap_or_else(|e| panic!("{}", e))
-                    .has_one;
+                let mut args = None;
+                for attr in &field.attrs {
+                    match attr.path.get_ident() {
+                        Some(i) if i == "has_one" => {
+                            let parsed = syn::parse2::<HasOne>(attr.tokens.clone())
+                                .unwrap_or_else(|e| abort!(e));
+                            args = Some(parsed);
+                        }
+                        _ => {}
+                    }
+                }
+
+                let args = args.unwrap_or_else(|| {
+                    abort!(field.span(), "Field missing #[has_one(...)] attribute");
+                });
+
                 FieldArgs::from(args)
             }
             AssociationType::OptionHasOne => {
-                let args = parse_field_args::<OptionHasOne>(&field)
-                    .unwrap_or_else(|e| panic!("{}", e))
-                    .option_has_one;
+                let mut args = None;
+                for attr in &field.attrs {
+                    match attr.path.get_ident() {
+                        Some(i) if i == "option_has_one" => {
+                            let parsed = syn::parse2::<HasOne>(attr.tokens.clone())
+                                .unwrap_or_else(|e| abort!(e));
+                            args = Some(parsed);
+                        }
+                        _ => {}
+                    }
+                }
+
+                let args = args.unwrap_or_else(|| {
+                    abort!(
+                        field.span(),
+                        "Field missing #[option_has_one(...)] attribute"
+                    );
+                });
+
                 FieldArgs::from(args)
             }
             AssociationType::HasMany => {
-                let args = parse_field_args::<HasMany>(&field)
-                    .unwrap_or_else(|e| panic!("{}", e))
-                    .has_many;
+                let mut args = None;
+                for attr in &field.attrs {
+                    match attr.path.get_ident() {
+                        Some(i) if i == "has_many" => {
+                            let parsed = syn::parse2::<HasMany>(attr.tokens.clone())
+                                .unwrap_or_else(|e| abort!(e));
+                            args = Some(parsed);
+                        }
+                        _ => {}
+                    }
+                }
+
+                let args = args.unwrap_or_else(|| {
+                    abort!(field.span(), "Field missing #[has_many(...)] attribute");
+                });
+
                 FieldArgs::from(args)
             }
             AssociationType::HasManyThrough => {
-                let args = parse_field_args::<HasManyThrough>(&field)
-                    .unwrap_or_else(|e| panic!("{}", e))
-                    .has_many_through;
+                let mut args = None;
+                for attr in &field.attrs {
+                    match attr.path.get_ident() {
+                        Some(i) if i == "has_many_through" => {
+                            let parsed = syn::parse2::<HasManyThrough>(attr.tokens.clone())
+                                .unwrap_or_else(|e| abort!(e));
+                            args = Some(parsed);
+                        }
+                        _ => {}
+                    }
+                }
+
+                let args = args.unwrap_or_else(|| {
+                    abort!(
+                        field.span(),
+                        "Field missing #[has_many_through(...)] attribute"
+                    );
+                });
+
                 FieldArgs::from(args)
             }
         };
@@ -409,7 +485,7 @@ impl DeriveData {
                 }
             }
         };
-        self.tokens.extend(code);
+        self.out.extend(code);
     }
 
     fn gen_eager_load_all_children_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
@@ -449,7 +525,7 @@ impl DeriveData {
     }
 
     fn struct_name(&self) -> &syn::Ident {
-        &self.input.ident
+        &self.struct_name
     }
 
     fn model(&self) -> TokenStream {
@@ -473,21 +549,7 @@ impl DeriveData {
     }
 
     fn struct_fields(&self) -> syn::punctuated::Iter<syn::Field> {
-        use syn::{Data, Fields};
-
-        match &self.input.data {
-            Data::Union(_) => panic!("EagerLoading can only be derived on structs"),
-            Data::Enum(_) => panic!("EagerLoading can only be derived on structs"),
-            Data::Struct(data) => match &data.fields {
-                Fields::Named(named) => named.named.iter(),
-                Fields::Unit => {
-                    panic!("EagerLoading can only be derived on structs with named fields")
-                }
-                Fields::Unnamed(_) => {
-                    panic!("EagerLoading can only be derived on structs with named fields")
-                }
-            },
-        }
+        self.fields.iter()
     }
 
     fn field_impl_context_name(&self, field: &syn::Field) -> Ident {
@@ -565,18 +627,6 @@ fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
     let segments = &path.segments;
     let segment = if_let_or_none!(Some, segments.last());
     Some(&segment.ident)
-}
-
-fn parse_field_args<T: FromMeta>(field: &syn::Field) -> Result<T, darling::Error> {
-    let attrs = field
-        .attrs
-        .iter()
-        .map(|attr| {
-            let meta = attr.parse_meta().unwrap_or_else(|e| panic!("{}", e));
-            NestedMeta::from(meta)
-        })
-        .collect::<Vec<_>>();
-    FromMeta::from_list(attrs.as_slice())
 }
 
 #[derive(Debug)]

@@ -1,8 +1,12 @@
-use darling::{FromDeriveInput, FromMeta};
 use heck::SnakeCase;
 use proc_macro2::{Span, TokenStream};
+use proc_macro_error::*;
 use quote::quote;
-use syn::{self, Ident};
+use syn::{
+    self,
+    parse::{Parse, ParseStream},
+    Ident, Token,
+};
 
 macro_rules! token_stream_getter {
     ( $name:ident ) => {
@@ -13,21 +17,68 @@ macro_rules! token_stream_getter {
     }
 }
 
-#[derive(FromDeriveInput, Debug)]
-#[darling(attributes(eager_loading), forward_attrs(doc, cfg, allow))]
+#[derive(Debug)]
 pub struct DeriveArgs {
-    #[darling(default)]
     model: Option<syn::Path>,
-    #[darling(default)]
     id: Option<syn::Path>,
     context: syn::Path,
     error: syn::Path,
-    #[darling(default)]
     root_model_field: Option<syn::Ident>,
-
     // TODO: Document this new attribute
-    #[darling(default)]
     print: Option<()>,
+}
+
+impl Parse for DeriveArgs {
+    fn parse(input: ParseStream) -> syn::Result<DeriveArgs> {
+        let mut print = None;
+        let mut model = None;
+        let mut id = None;
+        let mut context = None;
+        let mut error = None;
+        let mut root_model_field = None;
+
+        let content;
+        syn::parenthesized!(content in input);
+        while !content.is_empty() {
+            let ident = content.parse::<Ident>()?;
+
+            match &*ident.to_string() {
+                "print" => print = Some(()),
+                "model" => {
+                    content.parse::<Token![=]>()?;
+                    model = Some(content.parse()?);
+                }
+                "id" => {
+                    content.parse::<Token![=]>()?;
+                    id = Some(content.parse()?);
+                }
+                "context" => {
+                    content.parse::<Token![=]>()?;
+                    context = Some(content.parse()?);
+                }
+                "error" => {
+                    content.parse::<Token![=]>()?;
+                    error = Some(content.parse()?);
+                }
+                "root_model_field" => {
+                    content.parse::<Token![=]>()?;
+                    root_model_field = Some(content.parse()?);
+                }
+                other => abort!(ident.span(), "Unknown argument `{}`", other),
+            }
+
+            content.parse::<Token![,]>().ok();
+        }
+
+        Ok(DeriveArgs {
+            print,
+            model,
+            id,
+            context: context.unwrap(),
+            error: error.unwrap(),
+            root_model_field,
+        })
+    }
 }
 
 impl DeriveArgs {
@@ -65,81 +116,195 @@ impl DeriveArgs {
     }
 }
 
-#[derive(FromMeta)]
 pub struct HasOne {
-    pub has_one: HasOneInner,
-}
-
-#[derive(FromMeta)]
-pub struct OptionHasOne {
-    pub option_has_one: HasOneInner,
-}
-
-#[derive(FromMeta)]
-pub struct HasOneInner {
-    #[darling(default)]
     print: Option<()>,
-    #[darling(default)]
     skip: Option<()>,
-    #[allow(dead_code)]
-    #[darling(default)]
-    default: (),
-    #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
-    #[darling(default)]
     root_model_field: Option<syn::Ident>,
-    #[darling(default)]
     graphql_field: Option<syn::Ident>,
 }
 
-#[derive(FromMeta)]
+impl Parse for HasOne {
+    fn parse(input: ParseStream) -> syn::Result<HasOne> {
+        let mut print = None;
+        let mut skip = None;
+        let mut foreign_key_field = None;
+        let mut root_model_field = None;
+        let mut graphql_field = None;
+
+        let content;
+        syn::parenthesized!(content in input);
+        while !content.is_empty() {
+            let ident = content.parse::<Ident>()?;
+
+            match &*ident.to_string() {
+                "print" => print = Some(()),
+                "skip" => skip = Some(()),
+                "default" => {}
+                "foreign_key_field" => {
+                    content.parse::<Token![=]>()?;
+                    foreign_key_field = Some(content.parse()?);
+                }
+                "root_model_field" => {
+                    content.parse::<Token![=]>()?;
+                    root_model_field = Some(content.parse()?);
+                }
+                "graphql_field" => {
+                    content.parse::<Token![=]>()?;
+                    graphql_field = Some(content.parse()?);
+                }
+                other => abort!(ident.span(), "Unknown argument `{}`", other),
+            }
+
+            content.parse::<Token![,]>().ok();
+        }
+
+        Ok(HasOne {
+            print,
+            skip,
+            foreign_key_field,
+            root_model_field,
+            graphql_field,
+        })
+    }
+}
+
 pub struct HasMany {
-    pub has_many: HasManyInner,
-}
-
-#[derive(FromMeta)]
-pub struct HasManyInner {
-    #[darling(default)]
     print: Option<()>,
-    #[darling(default)]
     skip: Option<()>,
-
-    #[darling(default)]
     foreign_key_field: Option<syn::Ident>,
-    #[darling(default)]
     foreign_key_optional: Option<()>,
-    #[darling(default)]
     root_model_field: Option<syn::Ident>,
-    #[darling(default)]
     predicate_method: Option<syn::Ident>,
-    #[darling(default)]
     graphql_field: Option<syn::Ident>,
 }
 
-#[derive(FromMeta)]
+impl Parse for HasMany {
+    fn parse(input: ParseStream) -> syn::Result<HasMany> {
+        let mut print = None;
+        let mut skip = None;
+        let mut foreign_key_field = None;
+        let mut foreign_key_optional = None;
+        let mut root_model_field = None;
+        let mut predicate_method = None;
+        let mut graphql_field = None;
+
+        let content;
+        syn::parenthesized!(content in input);
+        while !content.is_empty() {
+            let ident = content.parse::<Ident>()?;
+
+            match &*ident.to_string() {
+                "print" => print = Some(()),
+                "skip" => skip = Some(()),
+                "foreign_key_optional" => foreign_key_optional = Some(()),
+                "foreign_key_field" => {
+                    content.parse::<Token![=]>()?;
+                    foreign_key_field = Some(content.parse()?);
+                }
+                "root_model_field" => {
+                    content.parse::<Token![=]>()?;
+                    root_model_field = Some(content.parse()?);
+                }
+                "predicate_method" => {
+                    content.parse::<Token![=]>()?;
+                    predicate_method = Some(content.parse()?);
+                }
+                "graphql_field" => {
+                    content.parse::<Token![=]>()?;
+                    graphql_field = Some(content.parse()?);
+                }
+                // TODO: use abort!
+                other => abort!(ident.span(), "Unknown argument `{}`", other),
+            }
+
+            content.parse::<Token![,]>().ok();
+        }
+
+        Ok(HasMany {
+            print,
+            skip,
+            foreign_key_field,
+            foreign_key_optional,
+            root_model_field,
+            predicate_method,
+            graphql_field,
+        })
+    }
+}
+
 pub struct HasManyThrough {
-    pub has_many_through: HasManyThroughInner,
+    print: Option<()>,
+    skip: Option<()>,
+    join_model: Option<syn::Path>,
+    model_field: Option<syn::Path>,
+    join_model_field: Option<syn::Path>,
+    foreign_key_field: Option<syn::Ident>,
+    predicate_method: Option<syn::Ident>,
+    graphql_field: Option<syn::Ident>,
 }
 
-#[derive(FromMeta)]
-pub struct HasManyThroughInner {
-    #[darling(default)]
-    print: Option<()>,
-    #[darling(default)]
-    skip: Option<()>,
+impl Parse for HasManyThrough {
+    fn parse(input: ParseStream) -> syn::Result<HasManyThrough> {
+        let mut print = None;
+        let mut skip = None;
+        let mut join_model = None;
+        let mut model_field = None;
+        let mut join_model_field = None;
+        let mut foreign_key_field = None;
+        let mut predicate_method = None;
+        let mut graphql_field = None;
 
-    #[darling(default)]
-    join_model: Option<syn::Path>,
-    #[darling(default)]
-    model_field: Option<syn::Path>,
-    #[darling(default)]
-    join_model_field: Option<syn::Path>,
-    #[darling(default)]
-    foreign_key_field: Option<syn::Ident>,
-    #[darling(default)]
-    predicate_method: Option<syn::Ident>,
-    #[darling(default)]
-    graphql_field: Option<syn::Ident>,
+        let content;
+        syn::parenthesized!(content in input);
+        while !content.is_empty() {
+            let ident = content.parse::<Ident>()?;
+
+            match &*ident.to_string() {
+                "print" => print = Some(()),
+                "skip" => skip = Some(()),
+                "join_model" => {
+                    content.parse::<Token![=]>()?;
+                    join_model = Some(content.parse()?);
+                }
+                "model_field" => {
+                    content.parse::<Token![=]>()?;
+                    model_field = Some(content.parse()?);
+                }
+                "join_model_field" => {
+                    content.parse::<Token![=]>()?;
+                    join_model_field = Some(content.parse()?);
+                }
+                "foreign_key_field" => {
+                    content.parse::<Token![=]>()?;
+                    foreign_key_field = Some(content.parse()?);
+                }
+                "predicate_method" => {
+                    content.parse::<Token![=]>()?;
+                    predicate_method = Some(content.parse()?);
+                }
+                "graphql_field" => {
+                    content.parse::<Token![=]>()?;
+                    graphql_field = Some(content.parse()?);
+                }
+                // TODO: use abort!
+                other => abort!(ident.span(), "Unknown argument `{}`", other),
+            }
+
+            content.parse::<Token![,]>().ok();
+        }
+
+        Ok(HasManyThrough {
+            print,
+            skip,
+            join_model,
+            model_field,
+            join_model_field,
+            foreign_key_field,
+            predicate_method,
+            graphql_field,
+        })
+    }
 }
 
 pub struct FieldArgs {
@@ -227,8 +392,8 @@ fn type_to_string(ty: &syn::Type) -> String {
     tokenized.to_string()
 }
 
-impl From<HasOneInner> for FieldArgs {
-    fn from(inner: HasOneInner) -> Self {
+impl From<HasOne> for FieldArgs {
+    fn from(inner: HasOne) -> Self {
         Self {
             foreign_key_field: inner.foreign_key_field,
             foreign_key_optional: false,
@@ -244,8 +409,8 @@ impl From<HasOneInner> for FieldArgs {
     }
 }
 
-impl From<HasManyInner> for FieldArgs {
-    fn from(inner: HasManyInner) -> Self {
+impl From<HasMany> for FieldArgs {
+    fn from(inner: HasMany) -> Self {
         if inner.root_model_field.is_none() && inner.skip.is_none() {
             panic!("For the attribute #[has_many(...)] you must provide either `root_model_field` or `skip`. Both were missing");
         }
@@ -265,8 +430,8 @@ impl From<HasManyInner> for FieldArgs {
     }
 }
 
-impl From<HasManyThroughInner> for FieldArgs {
-    fn from(inner: HasManyThroughInner) -> Self {
+impl From<HasManyThrough> for FieldArgs {
+    fn from(inner: HasManyThrough) -> Self {
         if inner.join_model.is_none() && inner.skip.is_none() {
             panic!("For the attribute #[has_many_through(...)] you must provide either `join_model` or `skip`. Both were missing");
         }
