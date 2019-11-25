@@ -1,7 +1,8 @@
 use heck::SnakeCase;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::*;
-use quote::quote;
+use quote::{format_ident, quote};
+use std::ops::{Deref, DerefMut};
 use syn::{
     self,
     parse::{Parse, ParseStream},
@@ -140,6 +141,7 @@ impl DeriveArgs {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct HasOne {
     print: Option<()>,
     skip: Option<()>,
@@ -173,13 +175,27 @@ impl Parse for HasOne {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OptionHasOne {
+    has_one: HasOne,
+}
+
+impl Parse for OptionHasOne {
+    fn parse(input: ParseStream) -> syn::Result<OptionHasOne> {
+        let has_one = input.parse::<HasOne>()?;
+
+        Ok(OptionHasOne { has_one })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct HasMany {
     print: Option<()>,
     skip: Option<()>,
     foreign_key_field: Option<syn::Ident>,
-    foreign_key_optional: Option<()>,
+    pub foreign_key_optional: Option<()>,
     root_model_field: Option<syn::Ident>,
-    predicate_method: Option<syn::Ident>,
+    pub predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
 }
 
@@ -205,6 +221,10 @@ impl Parse for HasMany {
             ],
         }
 
+        if root_model_field.is_none() && skip.is_none() {
+            return Err(input.error("For the attribute #[has_many(...)] you must provide either `root_model_field` or `skip`. Both were missing"));
+        }
+
         Ok(HasMany {
             print,
             skip,
@@ -217,14 +237,42 @@ impl Parse for HasMany {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct HasManyThrough {
     print: Option<()>,
     skip: Option<()>,
-    join_model: Option<syn::TypePath>,
+    pub join_model: Option<syn::TypePath>,
     model_field: Option<syn::Type>,
     foreign_key_field: Option<syn::Ident>,
-    predicate_method: Option<syn::Ident>,
+    pub predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+}
+
+impl HasManyThrough {
+    pub fn join_model(&self, span: Span) -> syn::Type {
+        self.join_model
+            .as_ref()
+            .cloned()
+            .map(syn::Type::Path)
+            .unwrap_or_else(|| abort!(span, "`#[has_many_through]` missing `join_model`"))
+    }
+
+    pub fn model_field(&self, inner_type: &syn::Type) -> TokenStream {
+        if let Some(inner) = &self.model_field {
+            quote! { #inner }
+        } else {
+            let inner_type = type_to_string(inner_type).to_snake_case();
+            let inner_type = Ident::new(&inner_type, Span::call_site());
+            quote! { #inner_type }
+        }
+    }
+
+    pub fn model_id_field(&self, inner_type: &syn::Type) -> Ident {
+        Ident::new(
+            &format!("{}_id", self.model_field(inner_type)),
+            Span::call_site(),
+        )
+    }
 }
 
 impl Parse for HasManyThrough {
@@ -250,6 +298,10 @@ impl Parse for HasManyThrough {
             ],
         }
 
+        if join_model.is_none() && skip.is_none() {
+            return Err(input.error("For the attribute #[has_many_through(...)] you must provide either `join_model` or `skip`. Both were missing"));
+        }
+
         Ok(HasManyThrough {
             print,
             skip,
@@ -262,64 +314,89 @@ impl Parse for HasManyThrough {
     }
 }
 
-pub struct FieldArgs {
-    foreign_key_field: Option<syn::Ident>,
-    pub foreign_key_optional: bool,
-    model_field: Option<syn::Type>,
-    pub join_model: Option<syn::TypePath>,
-    pub skip: bool,
-    pub print: bool,
-    root_model_field: Option<syn::Ident>,
-    predicate_method: Option<syn::Ident>,
-    graphql_field: Option<syn::Ident>,
+#[derive(Debug, Clone)]
+pub enum FieldArgs {
+    HasOne(Spanned<HasOne>),
+    OptionHasOne(Spanned<OptionHasOne>),
+    HasMany(Spanned<HasMany>),
+    HasManyThrough(Spanned<Box<HasManyThrough>>),
 }
 
 impl FieldArgs {
-    pub fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
-        if let Some(inner) = &self.foreign_key_field {
-            quote! { #inner }
-        } else {
-            let field_name = field_name.to_string().to_snake_case();
-            let field_name = format!("{}_id", field_name);
-            let field_name = Ident::new(&field_name, Span::call_site());
-            quote! { #field_name }
+    pub fn skip(&self) -> bool {
+        match self {
+            FieldArgs::HasOne(inner) => inner.skip.is_some(),
+            FieldArgs::OptionHasOne(inner) => inner.has_one.skip.is_some(),
+            FieldArgs::HasMany(inner) => inner.skip.is_some(),
+            FieldArgs::HasManyThrough(inner) => inner.skip.is_some(),
         }
     }
 
-    pub fn root_model_field(&self, field_name: &Ident) -> TokenStream {
-        if let Some(inner) = &self.root_model_field {
-            quote! { #inner }
-        } else {
-            let field_name = field_name.to_string().to_snake_case();
-            let field_name = Ident::new(&field_name, Span::call_site());
-            quote! { #field_name }
+    pub fn print(&self) -> bool {
+        match self {
+            FieldArgs::HasOne(inner) => inner.print.is_some(),
+            FieldArgs::OptionHasOne(inner) => inner.has_one.print.is_some(),
+            FieldArgs::HasMany(inner) => inner.print.is_some(),
+            FieldArgs::HasManyThrough(inner) => inner.print.is_some(),
         }
     }
 
     pub fn graphql_field(&self) -> &Option<syn::Ident> {
-        &self.graphql_field
-    }
-
-    pub fn predicate_method(&self) -> Option<syn::Ident> {
-        self.predicate_method.clone()
-    }
-
-    pub fn join_model(&self) -> TokenStream {
-        if let Some(inner) = &self.join_model {
-            quote! { #inner }
-        } else {
-            quote! { () }
+        match self {
+            FieldArgs::HasOne(inner) => &inner.graphql_field,
+            FieldArgs::OptionHasOne(inner) => &inner.has_one.graphql_field,
+            FieldArgs::HasMany(inner) => &inner.graphql_field,
+            FieldArgs::HasManyThrough(inner) => &inner.graphql_field,
         }
     }
 
-    pub fn model_field(&self, inner_type: &syn::Type) -> TokenStream {
-        if let Some(inner) = &self.model_field {
+    pub fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
+        let foreign_key_field = match self {
+            FieldArgs::HasOne(inner) => &inner.foreign_key_field,
+            FieldArgs::OptionHasOne(inner) => &inner.has_one.foreign_key_field,
+            FieldArgs::HasMany(inner) => &inner.foreign_key_field,
+            FieldArgs::HasManyThrough(inner) => &inner.foreign_key_field,
+        };
+
+        if let Some(inner) = foreign_key_field {
             quote! { #inner }
         } else {
-            let inner_type = type_to_string(inner_type).to_snake_case();
-            let inner_type = Ident::new(&inner_type, Span::call_site());
-            quote! { #inner_type }
+            let field_name = field_name.to_string().to_snake_case();
+            let field_name = format_ident!("{}_id", field_name);
+            quote! { #field_name }
         }
+    }
+}
+
+pub trait RootModelField {
+    fn get_root_model_field(&self) -> &Option<Ident>;
+
+    fn root_model_field(&self, field_name: &Ident) -> TokenStream {
+        if let Some(inner) = self.get_root_model_field() {
+            quote! { #inner }
+        } else {
+            let field_name = field_name.to_string().to_snake_case();
+            let field_name = Ident::new(&field_name, Span::call_site());
+            quote! { #field_name }
+        }
+    }
+}
+
+impl RootModelField for HasOne {
+    fn get_root_model_field(&self) -> &Option<Ident> {
+        &self.root_model_field
+    }
+}
+
+impl RootModelField for OptionHasOne {
+    fn get_root_model_field(&self) -> &Option<Ident> {
+        self.has_one.get_root_model_field()
+    }
+}
+
+impl RootModelField for HasMany {
+    fn get_root_model_field(&self) -> &Option<Ident> {
+        &self.root_model_field
     }
 }
 
@@ -330,58 +407,29 @@ fn type_to_string(ty: &syn::Type) -> String {
     tokenized.to_string()
 }
 
-impl From<HasOne> for FieldArgs {
-    fn from(inner: HasOne) -> Self {
-        Self {
-            foreign_key_field: inner.foreign_key_field,
-            foreign_key_optional: false,
-            root_model_field: inner.root_model_field,
-            join_model: None,
-            model_field: None,
-            skip: inner.skip.is_some(),
-            print: inner.print.is_some(),
-            predicate_method: None,
-            graphql_field: inner.graphql_field,
-        }
+#[derive(Debug, Clone)]
+pub struct Spanned<T>(Span, T);
+
+impl<T> Spanned<T> {
+    pub fn new(span: Span, t: T) -> Self {
+        Self(span, t)
+    }
+
+    pub fn span(&self) -> Span {
+        self.0
     }
 }
 
-impl From<HasMany> for FieldArgs {
-    fn from(inner: HasMany) -> Self {
-        if inner.root_model_field.is_none() && inner.skip.is_none() {
-            panic!("For the attribute #[has_many(...)] you must provide either `root_model_field` or `skip`. Both were missing");
-        }
+impl<T> Deref for Spanned<T> {
+    type Target = T;
 
-        Self {
-            foreign_key_field: inner.foreign_key_field,
-            foreign_key_optional: inner.foreign_key_optional.is_some(),
-            root_model_field: inner.root_model_field,
-            join_model: None,
-            model_field: None,
-            skip: inner.skip.is_some(),
-            print: inner.print.is_some(),
-            predicate_method: inner.predicate_method,
-            graphql_field: inner.graphql_field,
-        }
+    fn deref(&self) -> &T {
+        &self.1
     }
 }
 
-impl From<HasManyThrough> for FieldArgs {
-    fn from(inner: HasManyThrough) -> Self {
-        if inner.join_model.is_none() && inner.skip.is_none() {
-            panic!("For the attribute #[has_many_through(...)] you must provide either `join_model` or `skip`. Both were missing");
-        }
-
-        Self {
-            foreign_key_field: inner.foreign_key_field,
-            foreign_key_optional: false,
-            root_model_field: None,
-            join_model: inner.join_model,
-            model_field: inner.model_field,
-            skip: inner.skip.is_some(),
-            print: inner.print.is_some(),
-            predicate_method: inner.predicate_method,
-            graphql_field: inner.graphql_field,
-        }
+impl<T> DerefMut for Spanned<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.1
     }
 }

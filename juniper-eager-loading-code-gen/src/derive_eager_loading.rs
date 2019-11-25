@@ -1,11 +1,13 @@
 mod field_args;
 
-use field_args::{DeriveArgs, FieldArgs, HasMany, HasManyThrough, HasOne};
+use field_args::{
+    DeriveArgs, FieldArgs, HasMany, HasManyThrough, HasOne, OptionHasOne, RootModelField, Spanned,
+};
 use heck::{CamelCase, SnakeCase};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::*;
-use quote::quote;
-use syn::spanned::Spanned;
+use quote::{format_ident, quote};
+use syn::spanned::Spanned as _;
 use syn::{parse_macro_input, Fields, GenericArgument, Ident, ItemStruct, PathArguments, Type};
 
 pub fn gen_tokens(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -101,7 +103,7 @@ impl DeriveData {
     }
 
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
-        let (args, data) = self.parse_field_args(field)?;
+        let data = self.parse_field_args(field)?;
 
         let inner_type = &data.inner_type;
         let struct_name = self.struct_name();
@@ -130,20 +132,21 @@ impl DeriveData {
             }
         };
 
-        if args.print {
+        if data.args.print() {
             eprintln!("{}", full_output);
         }
 
-        if args.skip {
+        if data.args.skip() {
             Some(quote! {})
         } else {
             Some(full_output)
         }
     }
 
-    fn parse_field_args(&self, field: &syn::Field) -> Option<(FieldArgs, FieldDeriveData)> {
-        let inner_type = get_type_from_association(&field.ty)?;
+    fn parse_field_args(&self, field: &syn::Field) -> Option<FieldDeriveData> {
+        let inner_type = get_type_from_association(&field.ty)?.clone();
         let association_type = association_type(&field.ty)?;
+        let span = field.span();
 
         let args = match association_type {
             AssociationType::HasOne => {
@@ -152,10 +155,10 @@ impl DeriveData {
                         abort!(field.span(), "Field missing #[has_one(...)] attribute");
                     });
 
-                FieldArgs::from(args)
+                FieldArgs::HasOne(Spanned::new(span, args))
             }
             AssociationType::OptionHasOne => {
-                let args = find_and_parse_attr::<HasOne>("option_has_one", &field.attrs)
+                let args = find_and_parse_attr::<OptionHasOne>("option_has_one", &field.attrs)
                     .unwrap_or_else(|| {
                         abort!(
                             field.span(),
@@ -163,7 +166,7 @@ impl DeriveData {
                         );
                     });
 
-                FieldArgs::from(args)
+                FieldArgs::OptionHasOne(Spanned::new(span, args))
             }
             AssociationType::HasMany => {
                 let args =
@@ -171,7 +174,7 @@ impl DeriveData {
                         abort!(field.span(), "Field missing #[has_many(...)] attribute");
                     });
 
-                FieldArgs::from(args)
+                FieldArgs::HasMany(Spanned::new(span, args))
             }
             AssociationType::HasManyThrough => {
                 let args = find_and_parse_attr::<HasManyThrough>("has_many_through", &field.attrs)
@@ -182,57 +185,53 @@ impl DeriveData {
                         );
                     });
 
-                FieldArgs::from(args)
+                FieldArgs::HasManyThrough(Spanned::new(span, Box::new(args)))
             }
         };
 
-        let field_name = field.ident.as_ref().unwrap_or_else(|| {
-            panic!("Found `juniper_eager_loading::HasOne` field without a name")
-        });
+        let field_name = field
+            .ident
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| abort!(span, "Found association field without a name"));
 
-        let foreign_key_field_default = match association_type {
-            AssociationType::HasMany | AssociationType::HasManyThrough => self.struct_name(),
-            AssociationType::HasOne | AssociationType::OptionHasOne => &field_name,
-        };
+        let foreign_key_field_default = match args {
+            FieldArgs::HasOne(_) | FieldArgs::OptionHasOne(_) => &field_name,
+            FieldArgs::HasMany(_) | FieldArgs::HasManyThrough(_) => self.struct_name(),
+        }
+        .clone();
 
         let data = FieldDeriveData {
-            field_name: field_name.clone(),
-            inner_type: inner_type.clone(),
-            root_model_field: self.root_model_field().clone(),
-            join_model: args.join_model(),
-            model_field: args.model_field(&inner_type),
-            foreign_key_field: args.foreign_key_field(foreign_key_field_default),
-            foreign_key_optional: args.foreign_key_optional,
-            field_root_model_field: args.root_model_field(&field_name),
-            association_type,
-            predicate_method: args.predicate_method(),
+            field_name,
+            inner_type,
+            foreign_key_field_default,
+            args,
         };
 
-        Some((args, data))
+        Some(data)
     }
 
     fn join_model_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        match data.association_type {
-            AssociationType::HasMany | AssociationType::HasOne | AssociationType::OptionHasOne => {
+        match &data.args {
+            FieldArgs::HasMany(_) | FieldArgs::HasOne(_) | FieldArgs::OptionHasOne(_) => {
                 quote! { () }
             }
-            AssociationType::HasManyThrough => {
-                let join_model = &data.join_model;
+            FieldArgs::HasManyThrough(has_many_through) => {
+                let join_model = &has_many_through.join_model;
                 quote! { #join_model }
             }
         }
     }
 
     fn load_children_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        use AssociationType::*;
-
-        let foreign_key_field = &data.foreign_key_field;
-        let join_model = &data.join_model;
-        let model_id_field = data.model_id_field();
+        let join_model: syn::Type;
+        let foreign_key_field = &data.args.foreign_key_field(&data.foreign_key_field_default);
         let inner_type = &data.inner_type;
 
-        let load_children_impl = match data.association_type {
-            HasOne => {
+        let load_children_impl = match &data.args {
+            FieldArgs::HasOne(_) => {
+                join_model = syn::parse_str::<syn::Type>("()").unwrap();
+
                 quote! {
                     let ids = models
                         .iter()
@@ -246,7 +245,9 @@ impl DeriveData {
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
             }
-            OptionHasOne => {
+            FieldArgs::OptionHasOne(_) => {
+                join_model = syn::parse_str::<syn::Type>("()").unwrap();
+
                 quote! {
                     let ids = models
                         .iter()
@@ -261,8 +262,10 @@ impl DeriveData {
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
             }
-            HasMany => {
-                let filter = if let Some(predicate_method) = &data.predicate_method {
+            FieldArgs::HasMany(has_many) => {
+                join_model = syn::parse_str::<syn::Type>("()").unwrap();
+
+                let filter = if let Some(predicate_method) = &has_many.predicate_method {
                     quote! {
                         let child_models = child_models
                             .into_iter()
@@ -282,8 +285,12 @@ impl DeriveData {
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
             }
-            HasManyThrough => {
-                let filter = if let Some(predicate_method) = &data.predicate_method {
+            FieldArgs::HasManyThrough(has_many_through) => {
+                join_model = has_many_through.join_model(has_many_through.span());
+
+                let model_id_field = has_many_through.model_id_field(&data.inner_type);
+
+                let filter = if let Some(predicate_method) = &has_many_through.predicate_method {
                     quote! {
                         let join_models = join_models
                             .into_iter()
@@ -342,27 +349,31 @@ impl DeriveData {
     }
 
     fn is_child_of_impl(&self, data: &FieldDeriveData) -> TokenStream {
-        let root_model_field = &data.root_model_field;
-        let foreign_key_field = &data.foreign_key_field;
-        let field_root_model_field = &data.field_root_model_field;
+        let root_model_field = self.root_model_field();
+        let foreign_key_field = &data.args.foreign_key_field(&data.foreign_key_field_default);
         let inner_type = &data.inner_type;
-        let join_model = &data.join_model;
-        let model_field = &data.model_field;
-        let model_id_field = &data.model_id_field();
+        let mut join_model = syn::parse_str::<syn::Type>("()").unwrap();
+        let field_name = &data.field_name;
 
-        let is_child_of_impl = match data.association_type {
-            AssociationType::HasOne => {
+        let is_child_of_impl = match &data.args {
+            FieldArgs::HasOne(has_one) => {
+                let field_root_model_field = has_one.root_model_field(field_name);
+
                 quote! {
                     node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
                 }
             }
-            AssociationType::OptionHasOne => {
+            FieldArgs::OptionHasOne(option_has_one) => {
+                let field_root_model_field = option_has_one.root_model_field(field_name);
+
                 quote! {
                     node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
                 }
             }
-            AssociationType::HasMany => {
-                if data.foreign_key_optional {
+            FieldArgs::HasMany(has_many) => {
+                let field_root_model_field = has_many.root_model_field(field_name);
+
+                if has_many.foreign_key_optional.is_some() {
                     quote! {
                         Some(node.#root_model_field.id) ==
                             child.#field_root_model_field.#foreign_key_field
@@ -374,7 +385,11 @@ impl DeriveData {
                     }
                 }
             }
-            AssociationType::HasManyThrough => {
+            FieldArgs::HasManyThrough(has_many_through) => {
+                join_model = has_many_through.join_model(has_many_through.span());
+                let model_field = has_many_through.model_field(&data.inner_type);
+                let model_id_field = has_many_through.model_id_field(&data.inner_type);
+
                 quote! {
                     node.#root_model_field.id == join_model.#foreign_key_field &&
                         join_model.#model_id_field == child.#model_field.id
@@ -435,7 +450,8 @@ impl DeriveData {
     fn gen_eager_load_all_children_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
         let inner_type = get_type_from_association(&field.ty)?;
 
-        let (args, _data) = self.parse_field_args(field)?;
+        let data = self.parse_field_args(field)?;
+        let args = data.args;
 
         let field_name = args
             .graphql_field()
@@ -446,10 +462,10 @@ impl DeriveData {
             })
             .unwrap_or_else(|| {
                 field.ident.clone().unwrap_or_else(|| {
-                    panic!("Found `juniper_eager_loading::HasOne` field without a name")
+                    abort!(field.span(), "Found association field without a name")
                 })
             });
-        let field_args_name = quote::format_ident!("{}_args", field_name);
+        let field_args_name = format_ident!("{}_args", field_name);
 
         let impl_context = self.field_impl_context_name(&field);
 
@@ -575,22 +591,10 @@ fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
 
 #[derive(Debug)]
 struct FieldDeriveData {
-    foreign_key_field: TokenStream,
-    foreign_key_optional: bool,
-    field_root_model_field: TokenStream,
-    root_model_field: TokenStream,
-    join_model: TokenStream,
-    inner_type: syn::Type,
     field_name: Ident,
-    association_type: AssociationType,
-    model_field: TokenStream,
-    predicate_method: Option<Ident>,
-}
-
-impl FieldDeriveData {
-    fn model_id_field(&self) -> Ident {
-        Ident::new(&format!("{}_id", self.model_field), Span::call_site())
-    }
+    inner_type: syn::Type,
+    args: FieldArgs,
+    foreign_key_field_default: Ident,
 }
 
 fn remove_possible_box_wrapper(ty: &Type) -> &syn::Type {
