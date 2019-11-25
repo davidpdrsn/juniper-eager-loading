@@ -19,18 +19,7 @@ pub fn gen_tokens(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
         ..
     } = item_struct;
 
-    let mut args = None;
-    for attr in attrs {
-        match attr.path.get_ident() {
-            Some(i) if i == "eager_loading" => {
-                let parsed =
-                    syn::parse2::<DeriveArgs>(attr.tokens.clone()).unwrap_or_else(|e| abort!(e));
-                args = Some(parsed);
-            }
-            _ => {}
-        }
-    }
-    let args = args.unwrap_or_else(|| {
+    let args = find_and_parse_attr("eager_loading", &attrs).unwrap_or_else(|| {
         abort!(
             item_struct_span,
             "Struct missing #[eager_loading(...)] attribute"
@@ -158,84 +147,40 @@ impl DeriveData {
 
         let args = match association_type {
             AssociationType::HasOne => {
-                let mut args = None;
-                for attr in &field.attrs {
-                    match attr.path.get_ident() {
-                        Some(i) if i == "has_one" => {
-                            let parsed = syn::parse2::<HasOne>(attr.tokens.clone())
-                                .unwrap_or_else(|e| abort!(e));
-                            args = Some(parsed);
-                        }
-                        _ => {}
-                    }
-                }
-
-                let args = args.unwrap_or_else(|| {
-                    abort!(field.span(), "Field missing #[has_one(...)] attribute");
-                });
+                let args =
+                    find_and_parse_attr::<HasOne>("has_one", &field.attrs).unwrap_or_else(|| {
+                        abort!(field.span(), "Field missing #[has_one(...)] attribute");
+                    });
 
                 FieldArgs::from(args)
             }
             AssociationType::OptionHasOne => {
-                let mut args = None;
-                for attr in &field.attrs {
-                    match attr.path.get_ident() {
-                        Some(i) if i == "option_has_one" => {
-                            let parsed = syn::parse2::<HasOne>(attr.tokens.clone())
-                                .unwrap_or_else(|e| abort!(e));
-                            args = Some(parsed);
-                        }
-                        _ => {}
-                    }
-                }
-
-                let args = args.unwrap_or_else(|| {
-                    abort!(
-                        field.span(),
-                        "Field missing #[option_has_one(...)] attribute"
-                    );
-                });
+                let args = find_and_parse_attr::<HasOne>("option_has_one", &field.attrs)
+                    .unwrap_or_else(|| {
+                        abort!(
+                            field.span(),
+                            "Field missing #[option_has_one(...)] attribute"
+                        );
+                    });
 
                 FieldArgs::from(args)
             }
             AssociationType::HasMany => {
-                let mut args = None;
-                for attr in &field.attrs {
-                    match attr.path.get_ident() {
-                        Some(i) if i == "has_many" => {
-                            let parsed = syn::parse2::<HasMany>(attr.tokens.clone())
-                                .unwrap_or_else(|e| abort!(e));
-                            args = Some(parsed);
-                        }
-                        _ => {}
-                    }
-                }
-
-                let args = args.unwrap_or_else(|| {
-                    abort!(field.span(), "Field missing #[has_many(...)] attribute");
-                });
+                let args =
+                    find_and_parse_attr::<HasMany>("has_many", &field.attrs).unwrap_or_else(|| {
+                        abort!(field.span(), "Field missing #[has_many(...)] attribute");
+                    });
 
                 FieldArgs::from(args)
             }
             AssociationType::HasManyThrough => {
-                let mut args = None;
-                for attr in &field.attrs {
-                    match attr.path.get_ident() {
-                        Some(i) if i == "has_many_through" => {
-                            let parsed = syn::parse2::<HasManyThrough>(attr.tokens.clone())
-                                .unwrap_or_else(|e| abort!(e));
-                            args = Some(parsed);
-                        }
-                        _ => {}
-                    }
-                }
-
-                let args = args.unwrap_or_else(|| {
-                    abort!(
-                        field.span(),
-                        "Field missing #[has_many_through(...)] attribute"
-                    );
-                });
+                let args = find_and_parse_attr::<HasManyThrough>("has_many_through", &field.attrs)
+                    .unwrap_or_else(|| {
+                        abort!(
+                            field.span(),
+                            "Field missing #[has_many_through(...)] attribute"
+                        );
+                    });
 
                 FieldArgs::from(args)
             }
@@ -680,4 +625,23 @@ fn remove_possible_box_wrapper(ty: &Type) -> &syn::Type {
     } else {
         ty
     }
+}
+
+fn find_and_parse_attr<T>(name: &str, attrs: &[syn::Attribute]) -> Option<T>
+where
+    T: syn::parse::Parse,
+{
+    let mut out = None;
+
+    for attr in attrs {
+        match attr.path.get_ident() {
+            Some(ident) if ident == name => {
+                let parsed = syn::parse2::<T>(attr.tokens.clone()).unwrap_or_else(|e| abort!(e));
+                out = Some(parsed);
+            }
+            _ => {}
+        }
+    }
+
+    out
 }

@@ -17,6 +17,56 @@ macro_rules! token_stream_getter {
     }
 }
 
+macro_rules! parse_attrs {
+    (
+        $input:ident,
+        noops = [$($noop:ident),*],
+        switches = [$($switch:ident),*],
+        values = [$($value:ident),*],
+    ) => {
+        $( $switch = None; )*
+        $( $value = None; )*
+
+        let content;
+        syn::parenthesized!(content in $input);
+
+        while !content.is_empty() {
+            let ident = content.parse::<Ident>()?;
+
+            match &*ident.to_string() {
+                $( stringify!($noop) => {}, )*
+                $( stringify!($switch) => $switch = Some(()), )*
+                $(
+                    stringify!($value) => {
+                        content.parse::<Token![=]>()?;
+                        $value = Some(content.parse()?);
+                    }
+                )*
+                other => {
+                    let supported = [
+                        $( stringify!($noop), )*
+                        $( stringify!($switch), )*
+                        $( stringify!($value), )*
+                    ]
+                        .iter()
+                        .map(|s| format!("`{}`", s))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    abort!(
+                        ident.span(),
+                        "Unknown argument `{}`. Supported arguments are {}",
+                        other,
+                        supported,
+                    )
+                }
+            }
+
+            content.parse::<Token![,]>().ok();
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DeriveArgs {
     model: Option<syn::Type>,
@@ -30,44 +80,18 @@ pub struct DeriveArgs {
 
 impl Parse for DeriveArgs {
     fn parse(input: ParseStream) -> syn::Result<DeriveArgs> {
-        let mut print = None;
-        let mut model = None;
-        let mut id = None;
-        let mut context = None;
-        let mut error = None;
-        let mut root_model_field = None;
+        let mut print;
+        let mut model;
+        let mut id;
+        let mut context;
+        let mut error;
+        let mut root_model_field;
 
-        let content;
-        syn::parenthesized!(content in input);
-        while !content.is_empty() {
-            let ident = content.parse::<Ident>()?;
-
-            match &*ident.to_string() {
-                "print" => print = Some(()),
-                "model" => {
-                    content.parse::<Token![=]>()?;
-                    model = Some(content.parse()?);
-                }
-                "id" => {
-                    content.parse::<Token![=]>()?;
-                    id = Some(content.parse()?);
-                }
-                "context" => {
-                    content.parse::<Token![=]>()?;
-                    context = Some(content.parse()?);
-                }
-                "error" => {
-                    content.parse::<Token![=]>()?;
-                    error = Some(content.parse()?);
-                }
-                "root_model_field" => {
-                    content.parse::<Token![=]>()?;
-                    root_model_field = Some(content.parse()?);
-                }
-                other => abort!(ident.span(), "Unknown argument `{}`", other),
-            }
-
-            content.parse::<Token![,]>().ok();
+        parse_attrs! {
+            input,
+            noops = [],
+            switches = [print],
+            values = [model, id, context, error, root_model_field],
         }
 
         Ok(DeriveArgs {
@@ -126,37 +150,17 @@ pub struct HasOne {
 
 impl Parse for HasOne {
     fn parse(input: ParseStream) -> syn::Result<HasOne> {
-        let mut print = None;
-        let mut skip = None;
-        let mut foreign_key_field = None;
-        let mut root_model_field = None;
-        let mut graphql_field = None;
+        let mut print;
+        let mut skip;
+        let mut foreign_key_field;
+        let mut root_model_field;
+        let mut graphql_field;
 
-        let content;
-        syn::parenthesized!(content in input);
-        while !content.is_empty() {
-            let ident = content.parse::<Ident>()?;
-
-            match &*ident.to_string() {
-                "print" => print = Some(()),
-                "skip" => skip = Some(()),
-                "default" => {}
-                "foreign_key_field" => {
-                    content.parse::<Token![=]>()?;
-                    foreign_key_field = Some(content.parse()?);
-                }
-                "root_model_field" => {
-                    content.parse::<Token![=]>()?;
-                    root_model_field = Some(content.parse()?);
-                }
-                "graphql_field" => {
-                    content.parse::<Token![=]>()?;
-                    graphql_field = Some(content.parse()?);
-                }
-                other => abort!(ident.span(), "Unknown argument `{}`", other),
-            }
-
-            content.parse::<Token![,]>().ok();
+        parse_attrs! {
+            input,
+            noops = [default],
+            switches = [print, skip],
+            values = [foreign_key_field, root_model_field, graphql_field],
         }
 
         Ok(HasOne {
@@ -181,43 +185,24 @@ pub struct HasMany {
 
 impl Parse for HasMany {
     fn parse(input: ParseStream) -> syn::Result<HasMany> {
-        let mut print = None;
-        let mut skip = None;
-        let mut foreign_key_field = None;
-        let mut foreign_key_optional = None;
-        let mut root_model_field = None;
-        let mut predicate_method = None;
-        let mut graphql_field = None;
+        let mut print;
+        let mut skip;
+        let mut foreign_key_field;
+        let mut foreign_key_optional;
+        let mut root_model_field;
+        let mut predicate_method;
+        let mut graphql_field;
 
-        let content;
-        syn::parenthesized!(content in input);
-        while !content.is_empty() {
-            let ident = content.parse::<Ident>()?;
-
-            match &*ident.to_string() {
-                "print" => print = Some(()),
-                "skip" => skip = Some(()),
-                "foreign_key_optional" => foreign_key_optional = Some(()),
-                "foreign_key_field" => {
-                    content.parse::<Token![=]>()?;
-                    foreign_key_field = Some(content.parse()?);
-                }
-                "root_model_field" => {
-                    content.parse::<Token![=]>()?;
-                    root_model_field = Some(content.parse()?);
-                }
-                "predicate_method" => {
-                    content.parse::<Token![=]>()?;
-                    predicate_method = Some(content.parse()?);
-                }
-                "graphql_field" => {
-                    content.parse::<Token![=]>()?;
-                    graphql_field = Some(content.parse()?);
-                }
-                other => abort!(ident.span(), "Unknown argument `{}`", other),
-            }
-
-            content.parse::<Token![,]>().ok();
+        parse_attrs! {
+            input,
+            noops = [],
+            switches = [print, skip, foreign_key_optional],
+            values = [
+                foreign_key_field,
+                root_model_field,
+                predicate_method,
+                graphql_field
+            ],
         }
 
         Ok(HasMany {
@@ -244,46 +229,25 @@ pub struct HasManyThrough {
 
 impl Parse for HasManyThrough {
     fn parse(input: ParseStream) -> syn::Result<HasManyThrough> {
-        let mut print = None;
-        let mut skip = None;
-        let mut join_model = None;
-        let mut model_field = None;
-        let mut foreign_key_field = None;
-        let mut predicate_method = None;
-        let mut graphql_field = None;
+        let mut print;
+        let mut skip;
+        let mut join_model;
+        let mut model_field;
+        let mut foreign_key_field;
+        let mut predicate_method;
+        let mut graphql_field;
 
-        let content;
-        syn::parenthesized!(content in input);
-        while !content.is_empty() {
-            let ident = content.parse::<Ident>()?;
-
-            match &*ident.to_string() {
-                "print" => print = Some(()),
-                "skip" => skip = Some(()),
-                "join_model" => {
-                    content.parse::<Token![=]>()?;
-                    join_model = Some(content.parse()?);
-                }
-                "model_field" => {
-                    content.parse::<Token![=]>()?;
-                    model_field = Some(content.parse()?);
-                }
-                "foreign_key_field" => {
-                    content.parse::<Token![=]>()?;
-                    foreign_key_field = Some(content.parse()?);
-                }
-                "predicate_method" => {
-                    content.parse::<Token![=]>()?;
-                    predicate_method = Some(content.parse()?);
-                }
-                "graphql_field" => {
-                    content.parse::<Token![=]>()?;
-                    graphql_field = Some(content.parse()?);
-                }
-                other => abort!(ident.span(), "Unknown argument `{}`", other),
-            }
-
-            content.parse::<Token![,]>().ok();
+        parse_attrs! {
+            input,
+            noops = [],
+            switches = [print, skip],
+            values = [
+                join_model,
+                model_field,
+                foreign_key_field,
+                predicate_method,
+                graphql_field
+            ],
         }
 
         Ok(HasManyThrough {
