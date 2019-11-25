@@ -95,6 +95,10 @@ This change is made for all attributes:
 - `#[has_many]`
 - `#[has_many_through]`
 
+**Remove `join_model_field` option from `HasManyThrough`**
+
+Turns out it wasn't being used and therefore didn't do anything.
+
 ## [0.4.2] - 2019-11-14
 
 - Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.

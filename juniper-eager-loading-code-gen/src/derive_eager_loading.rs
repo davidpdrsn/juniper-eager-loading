@@ -256,7 +256,6 @@ impl DeriveData {
             root_model_field: self.root_model_field().clone(),
             join_model: args.join_model(),
             model_field: args.model_field(&inner_type),
-            join_model_field: args.join_model_field(),
             foreign_key_field: args.foreign_key_field(foreign_key_field_default),
             foreign_key_optional: args.foreign_key_optional,
             field_root_model_field: args.root_model_field(&field_name),
@@ -640,7 +639,6 @@ struct FieldDeriveData {
     field_name: Ident,
     association_type: AssociationType,
     model_field: TokenStream,
-    join_model_field: TokenStream,
     predicate_method: Option<Ident>,
 }
 

@@ -433,7 +433,6 @@ pub struct User {
 
     #[has_many_through(
         // model_field = company,
-        // join_model_field = employment
         join_model = models::Employment,
     )]
     companies: HasManyThrough<Company>,

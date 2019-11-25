@@ -19,10 +19,10 @@ macro_rules! token_stream_getter {
 
 #[derive(Debug)]
 pub struct DeriveArgs {
-    model: Option<syn::Path>,
-    id: Option<syn::Path>,
-    context: syn::Path,
-    error: syn::Path,
+    model: Option<syn::Type>,
+    id: Option<syn::Type>,
+    context: syn::Type,
+    error: syn::Type,
     root_model_field: Option<syn::Ident>,
     // TODO: Document this new attribute
     print: Option<()>,
@@ -214,7 +214,6 @@ impl Parse for HasMany {
                     content.parse::<Token![=]>()?;
                     graphql_field = Some(content.parse()?);
                 }
-                // TODO: use abort!
                 other => abort!(ident.span(), "Unknown argument `{}`", other),
             }
 
@@ -236,9 +235,8 @@ impl Parse for HasMany {
 pub struct HasManyThrough {
     print: Option<()>,
     skip: Option<()>,
-    join_model: Option<syn::Path>,
-    model_field: Option<syn::Path>,
-    join_model_field: Option<syn::Path>,
+    join_model: Option<syn::TypePath>,
+    model_field: Option<syn::Type>,
     foreign_key_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
@@ -250,7 +248,6 @@ impl Parse for HasManyThrough {
         let mut skip = None;
         let mut join_model = None;
         let mut model_field = None;
-        let mut join_model_field = None;
         let mut foreign_key_field = None;
         let mut predicate_method = None;
         let mut graphql_field = None;
@@ -271,10 +268,6 @@ impl Parse for HasManyThrough {
                     content.parse::<Token![=]>()?;
                     model_field = Some(content.parse()?);
                 }
-                "join_model_field" => {
-                    content.parse::<Token![=]>()?;
-                    join_model_field = Some(content.parse()?);
-                }
                 "foreign_key_field" => {
                     content.parse::<Token![=]>()?;
                     foreign_key_field = Some(content.parse()?);
@@ -287,7 +280,6 @@ impl Parse for HasManyThrough {
                     content.parse::<Token![=]>()?;
                     graphql_field = Some(content.parse()?);
                 }
-                // TODO: use abort!
                 other => abort!(ident.span(), "Unknown argument `{}`", other),
             }
 
@@ -299,7 +291,6 @@ impl Parse for HasManyThrough {
             skip,
             join_model,
             model_field,
-            join_model_field,
             foreign_key_field,
             predicate_method,
             graphql_field,
@@ -310,9 +301,8 @@ impl Parse for HasManyThrough {
 pub struct FieldArgs {
     foreign_key_field: Option<syn::Ident>,
     pub foreign_key_optional: bool,
-    join_model_field: Option<syn::Path>,
-    model_field: Option<syn::Path>,
-    pub join_model: Option<syn::Path>,
+    model_field: Option<syn::Type>,
+    pub join_model: Option<syn::TypePath>,
     pub skip: bool,
     pub print: bool,
     root_model_field: Option<syn::Ident>,
@@ -367,22 +357,6 @@ impl FieldArgs {
             quote! { #inner_type }
         }
     }
-
-    pub fn join_model_field(&self) -> TokenStream {
-        if let Some(inner) = &self.join_model_field {
-            quote! { #inner }
-        } else if let Some(join_model) = &self.join_model {
-            let name = join_model.segments.last().unwrap();
-            let name = &name.ident;
-            let name = name.to_string().to_snake_case();
-            let name = Ident::new(&name, Span::call_site());
-            quote! { #name }
-        } else {
-            // This method is only used by `HasManyThrough` for which the `model_field` attribute is
-            // mandatory, so it will always be present when needed.
-            quote! { __eager_loading_unreachable }
-        }
-    }
 }
 
 fn type_to_string(ty: &syn::Type) -> String {
@@ -400,7 +374,6 @@ impl From<HasOne> for FieldArgs {
             root_model_field: inner.root_model_field,
             join_model: None,
             model_field: None,
-            join_model_field: None,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
             predicate_method: None,
@@ -421,7 +394,6 @@ impl From<HasMany> for FieldArgs {
             root_model_field: inner.root_model_field,
             join_model: None,
             model_field: None,
-            join_model_field: None,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
             predicate_method: inner.predicate_method,
@@ -442,7 +414,6 @@ impl From<HasManyThrough> for FieldArgs {
             root_model_field: None,
             join_model: inner.join_model,
             model_field: inner.model_field,
-            join_model_field: inner.join_model_field,
             skip: inner.skip.is_some(),
             print: inner.print.is_some(),
             predicate_method: inner.predicate_method,
