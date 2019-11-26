@@ -50,11 +50,11 @@ impl DeriveData {
         self.gen_graphql_node_for_model();
         self.gen_eager_load_all_children();
 
+        self.gen_eager_load_children_of_type();
+
         if self.args.print() {
             eprintln!("{}", self.out);
         }
-
-        self.gen_eager_load_children_of_type();
 
         self.out
     }
@@ -105,6 +105,10 @@ impl DeriveData {
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
         let data = self.parse_field_args(field)?;
 
+        if data.args.skip() {
+            return Some(quote! {})
+        }
+
         let inner_type = &data.inner_type;
         let struct_name = self.struct_name();
         let join_model_impl = self.join_model_impl(&data);
@@ -136,11 +140,7 @@ impl DeriveData {
             eprintln!("{}", full_output);
         }
 
-        if data.args.skip() {
-            Some(quote! {})
-        } else {
-            Some(full_output)
-        }
+        Some(full_output)
     }
 
     fn parse_field_args(&self, field: &syn::Field) -> Option<FieldDeriveData> {
@@ -217,7 +217,7 @@ impl DeriveData {
                 quote! { () }
             }
             FieldArgs::HasManyThrough(has_many_through) => {
-                let join_model = &has_many_through.join_model;
+                let join_model = has_many_through.join_model(has_many_through.span());
                 quote! { #join_model }
             }
         }
@@ -265,7 +265,7 @@ impl DeriveData {
             FieldArgs::HasMany(has_many) => {
                 join_model = syn::parse_str::<syn::Type>("()").unwrap();
 
-                let filter = if let Some(predicate_method) = &has_many.predicate_method {
+                let filter = if let Some(predicate_method) = has_many.predicate_method() {
                     quote! {
                         let child_models = child_models
                             .into_iter()
@@ -290,7 +290,7 @@ impl DeriveData {
 
                 let model_id_field = has_many_through.model_id_field(&data.inner_type);
 
-                let filter = if let Some(predicate_method) = &has_many_through.predicate_method {
+                let filter = if let Some(predicate_method) = has_many_through.predicate_method() {
                     quote! {
                         let join_models = join_models
                             .into_iter()

@@ -195,8 +195,14 @@ pub struct HasMany {
     foreign_key_field: Option<syn::Ident>,
     pub foreign_key_optional: Option<()>,
     root_model_field: Option<syn::Ident>,
-    pub predicate_method: Option<syn::Ident>,
+    predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+}
+
+impl HasMany {
+    pub fn predicate_method(&self) -> &Option<syn::Ident> {
+        &self.predicate_method
+    }
 }
 
 impl Parse for HasMany {
@@ -241,10 +247,10 @@ impl Parse for HasMany {
 pub struct HasManyThrough {
     print: Option<()>,
     skip: Option<()>,
-    pub join_model: Option<syn::TypePath>,
+    join_model: Option<syn::TypePath>,
     model_field: Option<syn::Type>,
     foreign_key_field: Option<syn::Ident>,
-    pub predicate_method: Option<syn::Ident>,
+    predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
 }
 
@@ -272,6 +278,10 @@ impl HasManyThrough {
             &format!("{}_id", self.model_field(inner_type)),
             Span::call_site(),
         )
+    }
+
+    pub fn predicate_method(&self) -> &Option<syn::Ident> {
+        &self.predicate_method
     }
 }
 
