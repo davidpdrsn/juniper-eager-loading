@@ -10,6 +10,12 @@ None.
 
 ### Breaking changes
 
+None.
+
+## [0.5.0] - 2019-11-27
+
+### Breaking changes
+
 **Rename `GraphqlNodeForModel::Connection` to `Context`**
 
 You might need more than just a database connection to eager load data, for example the currently logged in user or other data about the HTTP request. Since `Connection` was previously generic it was technically possible but it was awkward in practice. `Connection` is now renamed to `Context` and is supposed to be your Juniper context which can contain whatever data you need.
@@ -195,6 +201,7 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 Initial release.
 
+[0.5.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.2...0.5.0
 [0.4.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.1...0.4.2
 [0.4.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.1...0.4.0
