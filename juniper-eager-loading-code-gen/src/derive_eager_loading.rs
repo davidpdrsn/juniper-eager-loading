@@ -112,8 +112,8 @@ impl DeriveData {
         let load_children_impl = self.load_children_impl(&data);
         let association_impl = self.association_impl(&data);
         let is_child_of_impl = self.is_child_of_impl(&data);
-
         let context = self.field_impl_context_name(&field);
+        let field_arguments = data.args.field_arguments();
 
         let full_output = quote! {
             #[allow(missing_docs, dead_code)]
@@ -125,7 +125,7 @@ impl DeriveData {
                 #context,
                 #join_model_impl,
             > for #struct_name {
-                type FieldArguments = ();
+                type FieldArguments = #field_arguments;
 
                 #load_children_impl
                 #is_child_of_impl

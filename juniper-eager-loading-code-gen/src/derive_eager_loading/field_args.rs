@@ -69,6 +69,7 @@ pub struct HasOne {
     root_model_field: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
     default: Option<()>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 #[derive(Debug, Clone, FromAttributes)]
@@ -79,6 +80,7 @@ pub struct OptionHasOne {
     root_model_field: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
     default: Option<()>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 #[derive(Debug, Clone, FromAttributes)]
@@ -90,6 +92,7 @@ pub struct HasMany {
     root_model_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 impl HasMany {
@@ -107,6 +110,7 @@ pub struct HasManyThrough {
     foreign_key_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 impl HasManyThrough {
@@ -173,6 +177,21 @@ impl FieldArgs {
             FieldArgs::OptionHasOne(inner) => &inner.graphql_field,
             FieldArgs::HasMany(inner) => &inner.graphql_field,
             FieldArgs::HasManyThrough(inner) => &inner.graphql_field,
+        }
+    }
+
+    pub fn field_arguments(&self) -> syn::Type {
+        let field_arguments = match self {
+            FieldArgs::HasOne(inner) => &inner.field_arguments,
+            FieldArgs::OptionHasOne(inner) => &inner.field_arguments,
+            FieldArgs::HasMany(inner) => &inner.field_arguments,
+            FieldArgs::HasManyThrough(inner) => &inner.field_arguments,
+        };
+
+        if let Some(field_arguments) = field_arguments {
+            syn::parse2(quote! { #field_arguments<'a> }).unwrap()
+        } else {
+            syn::parse_str("()").unwrap()
         }
     }
 

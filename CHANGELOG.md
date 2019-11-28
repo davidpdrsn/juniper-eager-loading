@@ -6,7 +6,11 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-None.
+- Support generating code for fields that take arguments with
+  - `#[has_one(field_arguments = YourArgType)]`
+  - `#[option_has_one(field_arguments = YourArgType)]`
+  - `#[has_many(field_arguments = YourArgType)]`
+  - `#[has_many_through(field_arguments = YourArgType)]`
 
 ### Breaking changes
 
