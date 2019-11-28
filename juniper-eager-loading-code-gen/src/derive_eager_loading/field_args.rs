@@ -95,12 +95,15 @@ impl Parse for DeriveArgs {
             values = [model, id, context, error, root_model_field],
         }
 
+        let context = get_mandatory_arg(input, context, "eager_loading", "context")?;
+        let error = get_mandatory_arg(input, error, "eager_loading", "error")?;
+
         Ok(DeriveArgs {
             print,
             model,
             id,
-            context: context.unwrap(),
-            error: error.unwrap(),
+            context,
+            error,
             root_model_field,
         })
     }
@@ -441,5 +444,18 @@ impl<T> Deref for Spanned<T> {
 impl<T> DerefMut for Spanned<T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.1
+    }
+}
+
+fn get_mandatory_arg<T>(
+    input: ParseStream,
+    value: Option<T>,
+    attr: &str,
+    name: &str,
+) -> syn::Result<T> {
+    if let Some(value) = value {
+        Ok(value)
+    } else {
+        Err(input.error(&format!("#[{}] is missing `{}` argument", attr, name)))
     }
 }

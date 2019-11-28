@@ -6,7 +6,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
-None.
+- Give better error message if `#[eager_loading]` is missing `context` or `error` arguments.
 
 ### Breaking changes
 

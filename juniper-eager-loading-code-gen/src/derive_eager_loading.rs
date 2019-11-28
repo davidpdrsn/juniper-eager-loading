@@ -106,7 +106,7 @@ impl DeriveData {
         let data = self.parse_field_args(field)?;
 
         if data.args.skip() {
-            return Some(quote! {})
+            return Some(quote! {});
         }
 
         let inner_type = &data.inner_type;
