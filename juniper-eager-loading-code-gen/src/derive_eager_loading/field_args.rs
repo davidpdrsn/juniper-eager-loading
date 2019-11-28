@@ -148,6 +148,7 @@ pub struct HasOne {
     foreign_key_field: Option<syn::Ident>,
     root_model_field: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 impl Parse for HasOne {
@@ -157,12 +158,13 @@ impl Parse for HasOne {
         let mut foreign_key_field;
         let mut root_model_field;
         let mut graphql_field;
+        let mut field_arguments;
 
         parse_attrs! {
             input,
             noops = [default],
             switches = [print, skip],
-            values = [foreign_key_field, root_model_field, graphql_field],
+            values = [foreign_key_field, root_model_field, graphql_field, field_arguments],
         }
 
         Ok(HasOne {
@@ -171,6 +173,7 @@ impl Parse for HasOne {
             foreign_key_field,
             root_model_field,
             graphql_field,
+            field_arguments,
         })
     }
 }
@@ -197,6 +200,7 @@ pub struct HasMany {
     root_model_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 impl HasMany {
@@ -214,6 +218,7 @@ impl Parse for HasMany {
         let mut root_model_field;
         let mut predicate_method;
         let mut graphql_field;
+        let mut field_arguments;
 
         parse_attrs! {
             input,
@@ -223,7 +228,8 @@ impl Parse for HasMany {
                 foreign_key_field,
                 root_model_field,
                 predicate_method,
-                graphql_field
+                graphql_field,
+                field_arguments
             ],
         }
 
@@ -239,6 +245,7 @@ impl Parse for HasMany {
             root_model_field,
             predicate_method,
             graphql_field,
+            field_arguments,
         })
     }
 }
@@ -252,6 +259,7 @@ pub struct HasManyThrough {
     foreign_key_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    field_arguments: Option<syn::TypePath>,
 }
 
 impl HasManyThrough {
@@ -294,6 +302,7 @@ impl Parse for HasManyThrough {
         let mut foreign_key_field;
         let mut predicate_method;
         let mut graphql_field;
+        let mut field_arguments;
 
         parse_attrs! {
             input,
@@ -304,7 +313,8 @@ impl Parse for HasManyThrough {
                 model_field,
                 foreign_key_field,
                 predicate_method,
-                graphql_field
+                graphql_field,
+                field_arguments
             ],
         }
 
@@ -320,6 +330,7 @@ impl Parse for HasManyThrough {
             foreign_key_field,
             predicate_method,
             graphql_field,
+            field_arguments,
         })
     }
 }
@@ -357,6 +368,21 @@ impl FieldArgs {
             FieldArgs::OptionHasOne(inner) => &inner.has_one.graphql_field,
             FieldArgs::HasMany(inner) => &inner.graphql_field,
             FieldArgs::HasManyThrough(inner) => &inner.graphql_field,
+        }
+    }
+
+    pub fn field_arguments(&self) -> syn::Type {
+        let field_arguments = match self {
+            FieldArgs::HasOne(inner) => &inner.field_arguments,
+            FieldArgs::OptionHasOne(inner) => &inner.has_one.field_arguments,
+            FieldArgs::HasMany(inner) => &inner.field_arguments,
+            FieldArgs::HasManyThrough(inner) => &inner.field_arguments,
+        };
+
+        if let Some(field_arguments) = field_arguments {
+            syn::parse2(quote! { #field_arguments<'a> }).unwrap()
+        } else {
+            syn::parse_str("()").unwrap()
         }
     }
 

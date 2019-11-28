@@ -62,3 +62,7 @@ path = "../examples/has_many_through.rs"
 [[example]]
 name = "has_many_through_no_macros"
 path = "../examples/has_many_through_no_macros.rs"
+
+[[example]]
+name = "field_with_arguments"
+path = "../examples/field_with_arguments.rs"
