@@ -1,13 +1,10 @@
+use bae::FromAttributes;
 use heck::SnakeCase;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::*;
 use quote::{format_ident, quote};
 use std::ops::{Deref, DerefMut};
-use syn::{
-    self,
-    parse::{Parse, ParseStream},
-    Ident, Token,
-};
+use syn::{self, Ident};
 
 macro_rules! token_stream_getter {
     ( $name:ident ) => {
@@ -18,58 +15,8 @@ macro_rules! token_stream_getter {
     }
 }
 
-macro_rules! parse_attrs {
-    (
-        $input:ident,
-        noops = [$($noop:ident),*],
-        switches = [$($switch:ident),*],
-        values = [$($value:ident),*],
-    ) => {
-        $( $switch = None; )*
-        $( $value = None; )*
-
-        let content;
-        syn::parenthesized!(content in $input);
-
-        while !content.is_empty() {
-            let ident = content.parse::<Ident>()?;
-
-            match &*ident.to_string() {
-                $( stringify!($noop) => {}, )*
-                $( stringify!($switch) => $switch = Some(()), )*
-                $(
-                    stringify!($value) => {
-                        content.parse::<Token![=]>()?;
-                        $value = Some(content.parse()?);
-                    }
-                )*
-                other => {
-                    let supported = [
-                        $( stringify!($noop), )*
-                        $( stringify!($switch), )*
-                        $( stringify!($value), )*
-                    ]
-                        .iter()
-                        .map(|s| format!("`{}`", s))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    abort!(
-                        ident.span(),
-                        "Unknown argument `{}`. Supported arguments are {}",
-                        other,
-                        supported,
-                    )
-                }
-            }
-
-            content.parse::<Token![,]>().ok();
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct DeriveArgs {
+#[derive(Debug, FromAttributes)]
+pub struct EagerLoading {
     model: Option<syn::Type>,
     id: Option<syn::Type>,
     context: syn::Type,
@@ -79,34 +26,7 @@ pub struct DeriveArgs {
     print: Option<()>,
 }
 
-impl Parse for DeriveArgs {
-    fn parse(input: ParseStream) -> syn::Result<DeriveArgs> {
-        let mut print;
-        let mut model;
-        let mut id;
-        let mut context;
-        let mut error;
-        let mut root_model_field;
-
-        parse_attrs! {
-            input,
-            noops = [],
-            switches = [print],
-            values = [model, id, context, error, root_model_field],
-        }
-
-        Ok(DeriveArgs {
-            print,
-            model,
-            id,
-            context: context.unwrap(),
-            error: error.unwrap(),
-            root_model_field,
-        })
-    }
-}
-
-impl DeriveArgs {
+impl EagerLoading {
     token_stream_getter!(context);
     token_stream_getter!(error);
 
@@ -141,54 +61,27 @@ impl DeriveArgs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromAttributes)]
 pub struct HasOne {
     print: Option<()>,
     skip: Option<()>,
     foreign_key_field: Option<syn::Ident>,
     root_model_field: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
+    default: Option<()>,
 }
 
-impl Parse for HasOne {
-    fn parse(input: ParseStream) -> syn::Result<HasOne> {
-        let mut print;
-        let mut skip;
-        let mut foreign_key_field;
-        let mut root_model_field;
-        let mut graphql_field;
-
-        parse_attrs! {
-            input,
-            noops = [default],
-            switches = [print, skip],
-            values = [foreign_key_field, root_model_field, graphql_field],
-        }
-
-        Ok(HasOne {
-            print,
-            skip,
-            foreign_key_field,
-            root_model_field,
-            graphql_field,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromAttributes)]
 pub struct OptionHasOne {
-    has_one: HasOne,
+    print: Option<()>,
+    skip: Option<()>,
+    foreign_key_field: Option<syn::Ident>,
+    root_model_field: Option<syn::Ident>,
+    graphql_field: Option<syn::Ident>,
+    default: Option<()>,
 }
 
-impl Parse for OptionHasOne {
-    fn parse(input: ParseStream) -> syn::Result<OptionHasOne> {
-        let has_one = input.parse::<HasOne>()?;
-
-        Ok(OptionHasOne { has_one })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromAttributes)]
 pub struct HasMany {
     print: Option<()>,
     skip: Option<()>,
@@ -205,45 +98,7 @@ impl HasMany {
     }
 }
 
-impl Parse for HasMany {
-    fn parse(input: ParseStream) -> syn::Result<HasMany> {
-        let mut print;
-        let mut skip;
-        let mut foreign_key_field;
-        let mut foreign_key_optional;
-        let mut root_model_field;
-        let mut predicate_method;
-        let mut graphql_field;
-
-        parse_attrs! {
-            input,
-            noops = [],
-            switches = [print, skip, foreign_key_optional],
-            values = [
-                foreign_key_field,
-                root_model_field,
-                predicate_method,
-                graphql_field
-            ],
-        }
-
-        if root_model_field.is_none() && skip.is_none() {
-            return Err(input.error("For the attribute #[has_many(...)] you must provide either `root_model_field` or `skip`. Both were missing"));
-        }
-
-        Ok(HasMany {
-            print,
-            skip,
-            foreign_key_field,
-            foreign_key_optional,
-            root_model_field,
-            predicate_method,
-            graphql_field,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromAttributes)]
 pub struct HasManyThrough {
     print: Option<()>,
     skip: Option<()>,
@@ -285,45 +140,6 @@ impl HasManyThrough {
     }
 }
 
-impl Parse for HasManyThrough {
-    fn parse(input: ParseStream) -> syn::Result<HasManyThrough> {
-        let mut print;
-        let mut skip;
-        let mut join_model;
-        let mut model_field;
-        let mut foreign_key_field;
-        let mut predicate_method;
-        let mut graphql_field;
-
-        parse_attrs! {
-            input,
-            noops = [],
-            switches = [print, skip],
-            values = [
-                join_model,
-                model_field,
-                foreign_key_field,
-                predicate_method,
-                graphql_field
-            ],
-        }
-
-        if join_model.is_none() && skip.is_none() {
-            return Err(input.error("For the attribute #[has_many_through(...)] you must provide either `join_model` or `skip`. Both were missing"));
-        }
-
-        Ok(HasManyThrough {
-            print,
-            skip,
-            join_model,
-            model_field,
-            foreign_key_field,
-            predicate_method,
-            graphql_field,
-        })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum FieldArgs {
     HasOne(Spanned<HasOne>),
@@ -336,7 +152,7 @@ impl FieldArgs {
     pub fn skip(&self) -> bool {
         match self {
             FieldArgs::HasOne(inner) => inner.skip.is_some(),
-            FieldArgs::OptionHasOne(inner) => inner.has_one.skip.is_some(),
+            FieldArgs::OptionHasOne(inner) => inner.skip.is_some(),
             FieldArgs::HasMany(inner) => inner.skip.is_some(),
             FieldArgs::HasManyThrough(inner) => inner.skip.is_some(),
         }
@@ -345,7 +161,7 @@ impl FieldArgs {
     pub fn print(&self) -> bool {
         match self {
             FieldArgs::HasOne(inner) => inner.print.is_some(),
-            FieldArgs::OptionHasOne(inner) => inner.has_one.print.is_some(),
+            FieldArgs::OptionHasOne(inner) => inner.print.is_some(),
             FieldArgs::HasMany(inner) => inner.print.is_some(),
             FieldArgs::HasManyThrough(inner) => inner.print.is_some(),
         }
@@ -354,7 +170,7 @@ impl FieldArgs {
     pub fn graphql_field(&self) -> &Option<syn::Ident> {
         match self {
             FieldArgs::HasOne(inner) => &inner.graphql_field,
-            FieldArgs::OptionHasOne(inner) => &inner.has_one.graphql_field,
+            FieldArgs::OptionHasOne(inner) => &inner.graphql_field,
             FieldArgs::HasMany(inner) => &inner.graphql_field,
             FieldArgs::HasManyThrough(inner) => &inner.graphql_field,
         }
@@ -363,7 +179,7 @@ impl FieldArgs {
     pub fn foreign_key_field(&self, field_name: &Ident) -> TokenStream {
         let foreign_key_field = match self {
             FieldArgs::HasOne(inner) => &inner.foreign_key_field,
-            FieldArgs::OptionHasOne(inner) => &inner.has_one.foreign_key_field,
+            FieldArgs::OptionHasOne(inner) => &inner.foreign_key_field,
             FieldArgs::HasMany(inner) => &inner.foreign_key_field,
             FieldArgs::HasManyThrough(inner) => &inner.foreign_key_field,
         };
@@ -400,7 +216,7 @@ impl RootModelField for HasOne {
 
 impl RootModelField for OptionHasOne {
     fn get_root_model_field(&self) -> &Option<Ident> {
-        self.has_one.get_root_model_field()
+        &self.root_model_field
     }
 }
 
