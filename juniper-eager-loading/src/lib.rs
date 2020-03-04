@@ -507,7 +507,7 @@
 //! [Juniper]: https://github.com/graphql-rust/juniper
 //! [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
-#![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.5.0")]
+#![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.5.1")]
 #![allow(clippy::single_match, clippy::type_complexity)]
 #![deny(
     missing_docs,

@@ -6,6 +6,14 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ## Unreleased
 
+None.
+
+### Breaking changes
+
+None.
+
+## 0.5.1 - 2020-03-04
+
 - Support generating code for fields that take arguments with
   - `#[has_one(field_arguments = YourArgType)]`
   - `#[option_has_one(field_arguments = YourArgType)]`
@@ -26,11 +34,7 @@ See the docs for details about the specific attributes and what they do.
 
 `#[eager_loading]` now supports the argument `print` which will cause it to print the generated code during compilation. This attribute was also supported previously but it wasn't documented.
 
-### Breaking changes
-
-None.
-
-## [0.5.0] - 2019-11-27
+## 0.5.0 - 2019-11-27
 
 ### Breaking changes
 
@@ -123,16 +127,16 @@ This change is made for all attributes:
 
 Turns out it wasn't being used and therefore didn't do anything.
 
-## [0.4.2] - 2019-11-14
+## 0.4.2 - 2019-11-14
 
 - Support recursive types for `HasOne` and `OptionHasOne` associations. You can now use `HasOne<Box<T>>` or `OptionHasOne<Box<T>>` in your GraphQL types. `HasMany` and `HasManyThrough` already support recursive types because they're backed by `Vec`s.
 
-## [0.4.1] - 2019-10-29
+## 0.4.1 - 2019-10-29
 
 - The [examples](https://github.com/davidpdrsn/juniper-eager-loading/tree/master/examples) has been much improved.
 - Remove warning about this library being experimental. It is safe to use in production (:
 
-## [0.4.0] - 2019-10-23
+## 0.4.0 - 2019-10-23
 
 - Move `impl_load_from_for_diesel_{pg|mysql|sqlite}!` to proc-macros. Are fully backwards compatible but will give better errors.
 - Tweak docs for `impl_load_from_for_diesel_{pg|mysql|sqlite}!`.
@@ -160,7 +164,7 @@ Turns out it wasn't being used and therefore didn't do anything.
 
 If you're using the derive macros for everything in your app you shouldn't have to care about any of these changes. The generated code will automatically handle them.
 
-## [0.3.1] - 2019-10-09
+## 0.3.1 - 2019-10-09
 
 ### Added
 
@@ -173,7 +177,7 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 - Deprecate `impl_load_from_for_diesel`. `impl_load_from_for_diesel_pg` should be used instead. `impl_load_from_for_diesel` will be removed in 0.4.0.
 
-## [0.3.0] - 2019-10-05
+## 0.3.0 - 2019-10-05
 
 ### Added
 
@@ -187,7 +191,7 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 - Fixed "mutable_borrow_reservation_conflict" warnings.
 
-## [0.2.0] - 2019-06-30
+## 0.2.0 - 2019-06-30
 
 ### Added
 
@@ -202,29 +206,19 @@ If you're using the derive macros for everything in your app you shouldn't have 
 
 - The associated type `ChildModel` on `EagerLoadChildrenOfType` has been removed because it wasn't necessary.
 
-## [0.1.2] - 2019-06-18
+## 0.1.2 - 2019-06-18
 
 ### Fixed
 
 * Fixed spelling mistake in `eager_load_all_children` (from `eager_load_all_chilren`). [#11](https://github.com/davidpdrsn/juniper-eager-loading/pull/11<Paste>)
 * Previously, using mixed ID types between parent and child types would not compile. This now actually works. [#10](https://github.com/davidpdrsn/juniper-eager-loading/pull/10)
 
-## [0.1.1]
+## 0.1.1
 
 ### Added
 
 * Support for optional foreign keys when using `HasMany` by using the `foreign_key_optional` attribute.
 
-## [0.1.0]
+## 0.1.0
 
 Initial release.
-
-[0.5.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.2...0.5.0
-[0.4.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.1...0.4.2
-[0.4.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.4.0...0.4.1
-[0.4.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.1...0.4.0
-[0.3.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.3.0...0.3.1
-[0.3.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.2.0...0.3.0
-[0.2.0]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.2...0.2.0
-[0.1.2]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.1...0.1.2
-[0.1.1]: https://github.com/davidpdrsn/juniper-eager-loading/compare/0.1.0...0.1.1
