@@ -10,6 +10,8 @@ library.
 
 See the [crate documentation](https://docs.rs/juniper-eager-loading/) for a usage examples and more info.
 
+Please not that the API is not considered stable so breaking changes might be made.
+
 [Juniper]: https://github.com/graphql-rust/juniper
 [juniper-from-schema]: https://github.com/davidpdrsn/juniper-from-schema
 
