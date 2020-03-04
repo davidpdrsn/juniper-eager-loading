@@ -162,12 +162,12 @@ impl HasOne {
         let filter = match backend {
             Backend::Pg => {
                 quote! {
-                    #table::id.eq(diesel::pg::expression::dsl::any(ids))
+                    #table::table.primary_key().eq(diesel::pg::expression::dsl::any(ids))
                 }
             }
             Backend::Mysql | Backend::Sqlite => {
                 quote! {
-                    #table::id.eq_any(ids)
+                    #table::table.primary_key().eq_any(ids)
                 }
             }
         };
