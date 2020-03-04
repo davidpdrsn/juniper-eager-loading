@@ -102,10 +102,6 @@ impl DeriveData {
     fn gen_eager_load_children_of_type_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
         let data = self.parse_field_args(field)?;
 
-        if data.args.skip() {
-            return Some(quote! {});
-        }
-
         let inner_type = &data.inner_type;
         let struct_name = self.struct_name();
         let join_model_impl = self.join_model_impl(&data);
@@ -135,6 +131,10 @@ impl DeriveData {
 
         if data.args.print() {
             eprintln!("{}", full_output);
+        }
+
+        if data.args.skip() {
+            return Some(quote! {});
         }
 
         Some(full_output)
