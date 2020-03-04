@@ -18,7 +18,7 @@ quote = "1"
 syn = { version = "1", features = ["extra-traits"] }
 heck = "^0.3"
 proc-macro-error = "0.4.4"
-bae = "0.1.1"
+bae = "0.1"
 
 [lib]
 proc-macro = true

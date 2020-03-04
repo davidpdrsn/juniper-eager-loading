@@ -383,6 +383,8 @@
 //! | `model` | The model type behind your GraphQL struct | `models::{name of struct}` | `model = crate::db::models::User` |
 //! | `id` | Which id type does your app use? | `i32` | `id = UUID` |
 //! | `root_model_field` | The name of the field has holds the backing model | `{name of struct}` in snakecase. | `root_model_field = user` |
+//! | `primary_key_field` | The field that holds the primary key of the model. This field is only used by code generated for `#[has_many]` and `#[has_many_through]` associations. | `id` | `primary_key_field = identifier` |
+//! | `print` | If set it will print the generated implementation of `GraphqlNodeForModel` and `EagerLoadAllChildren` | Not set | `print` |
 //!
 //! # Associations
 //!
@@ -592,8 +594,9 @@ pub enum AssociationType {
 /// | Name | Description | Default | Example |
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of field}_id` | `foreign_key_field = country_id` |
-/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | `{name of field}` | `root_model_field = country` |
+/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the model | `{name of field}` | `root_model_field = country` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
+/// | `child_primary_key_field` | The name of the primary key field on the associated model | `id` | `child_primary_key_field = identifier` |
 /// | `default` | Use the default value for all unspecified attributes | N/A | `default` |
 ///
 /// Additionally it also supports the attributes `print`, `skip`, and `field_arguments`. See the [root model
@@ -724,7 +727,7 @@ impl<T> OptionHasOne<T> {
 /// |---|---|---|---|
 /// | `foreign_key_field` | The name of the foreign key field | `{name of struct}_id` | `foreign_key_field = user_id` |
 /// | `foreign_key_optional` | The foreign key type is optional | Not set | `foreign_key_optional` |
-/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = "car"` |
+/// | `root_model_field` | The name of the field on the associated GraphQL type that holds the database model | N/A (unless using `skip`) | `root_model_field = car` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
 /// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models | N/A (attribute is optional) | `predicate_method = a_predicate_method` |
 ///
@@ -793,9 +796,11 @@ impl<T> HasMany<T> {
 /// |---|---|---|---|
 /// | `model_field` | The field on the contained type that holds the model | `{name of contained type}` in snakecase | `model_field = company` |
 /// | `join_model` | The model we have to join with | N/A | `join_model = models::Employment` |
-/// | `foreign_key_field` | The field on the join model that contains the parent models id | `{name of parent type in lowercase}_id` | `foreign_key_field = car_id` |
+/// | `child_primary_key_field_on_join_model` | The field on the join model that holds the primary key of the child model (`Company` in the example above) | `{name of model}_id` | `child_primary_key_field_on_join_model = company_identifier` |
+/// | `foreign_key_field` | The field on the join model that holds the primary key of the parent model (`User` in the example above) | `{name of model}_id` | `foreign_key_field = user_identifier` |
+/// | `child_primary_key_field` | The field on the child model that holds its primary key | `id` | `foreign_key_field = identifier` |
 /// | `graphql_field` | The name of this field in your GraphQL schema | `{name of field}` | `graphql_field = country` |
-/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = "a_predicate_method"` |
+/// | `predicate_method` | Method used to filter child associations. This can be used if you only want to include a subset of the models. This method will be called to filter the join models. | N/A (attribute is optional) | `predicate_method = a_predicate_method` |
 ///
 /// Additionally it also supports the attributes `print`, `skip`, and `field_arguments`. See the [root model
 /// docs](/#attributes-supported-on-all-associations) for more into on those.

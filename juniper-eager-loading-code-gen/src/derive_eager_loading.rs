@@ -266,8 +266,10 @@ impl DeriveData {
             }
             FieldArgs::HasManyThrough(has_many_through) => {
                 join_model = has_many_through.join_model(has_many_through.span());
+                let child_primary_key_field = has_many_through.child_primary_key_field();
 
-                let model_id_field = has_many_through.model_id_field(&data.inner_type);
+                let child_primary_key_field_on_join_model =
+                    has_many_through.child_primary_key_field_on_join_model(&data.inner_type);
 
                 let filter = if let Some(predicate_method) = has_many_through.predicate_method() {
                     quote! {
@@ -292,7 +294,7 @@ impl DeriveData {
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
                         for child_model in &child_models {
-                            if join_model.#model_id_field == child_model.id {
+                            if join_model.#child_primary_key_field_on_join_model == child_model.#child_primary_key_field {
                                 let pair = (
                                     std::clone::Clone::clone(child_model),
                                     std::clone::Clone::clone(&join_model),
@@ -336,30 +338,33 @@ impl DeriveData {
 
         let is_child_of_impl = match &data.args {
             FieldArgs::HasOne(has_one) => {
+                let child_primary_key_field = has_one.child_primary_key_field();
                 let field_root_model_field = has_one.root_model_field(field_name);
 
                 quote! {
-                    node.#root_model_field.#foreign_key_field == child.#field_root_model_field.id
+                    node.#root_model_field.#foreign_key_field == child.#field_root_model_field.#child_primary_key_field
                 }
             }
             FieldArgs::OptionHasOne(option_has_one) => {
                 let field_root_model_field = option_has_one.root_model_field(field_name);
+                let child_primary_key_field = option_has_one.child_primary_key_field();
 
                 quote! {
-                    node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.id)
+                    node.#root_model_field.#foreign_key_field == Some(child.#field_root_model_field.#child_primary_key_field)
                 }
             }
             FieldArgs::HasMany(has_many) => {
                 let field_root_model_field = has_many.root_model_field(field_name);
+                let node_primary_key_field = self.primary_key_field();
 
                 if has_many.foreign_key_optional.is_some() {
                     quote! {
-                        Some(node.#root_model_field.id) ==
+                        Some(node.#root_model_field.#node_primary_key_field) ==
                             child.#field_root_model_field.#foreign_key_field
                     }
                 } else {
                     quote! {
-                        node.#root_model_field.id ==
+                        node.#root_model_field.#node_primary_key_field ==
                             child.#field_root_model_field.#foreign_key_field
                     }
                 }
@@ -367,11 +372,14 @@ impl DeriveData {
             FieldArgs::HasManyThrough(has_many_through) => {
                 join_model = has_many_through.join_model(has_many_through.span());
                 let model_field = has_many_through.model_field(&data.inner_type);
-                let model_id_field = has_many_through.model_id_field(&data.inner_type);
+                let child_primary_key_field_on_join_model =
+                    has_many_through.child_primary_key_field_on_join_model(&data.inner_type);
+                let child_primary_key_field = has_many_through.child_primary_key_field();
+                let node_primary_key_field = self.primary_key_field();
 
                 quote! {
-                    node.#root_model_field.id == join_model.#foreign_key_field &&
-                        join_model.#model_id_field == child.#model_field.id
+                    node.#root_model_field.#node_primary_key_field == join_model.#foreign_key_field &&
+                        join_model.#child_primary_key_field_on_join_model == child.#model_field.#child_primary_key_field
                 }
             }
         };
@@ -485,6 +493,10 @@ impl DeriveData {
 
     fn root_model_field(&self) -> TokenStream {
         self.args.root_model_field(&self.struct_name())
+    }
+
+    fn primary_key_field(&self) -> Ident {
+        self.args.primary_key_field()
     }
 
     fn struct_fields(&self) -> syn::punctuated::Iter<syn::Field> {

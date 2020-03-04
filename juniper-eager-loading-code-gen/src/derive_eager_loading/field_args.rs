@@ -22,8 +22,8 @@ pub struct EagerLoading {
     context: syn::Type,
     error: syn::Type,
     root_model_field: Option<syn::Ident>,
-    // TODO: Document this new attribute
     print: Option<()>,
+    primary_key_field: Option<syn::Ident>,
 }
 
 impl EagerLoading {
@@ -59,17 +59,38 @@ impl EagerLoading {
     pub fn print(&self) -> bool {
         self.print.is_some()
     }
+
+    pub fn primary_key_field(&self) -> syn::Ident {
+        if let Some(id) = &self.primary_key_field {
+            id.clone()
+        } else {
+            format_ident!("id")
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromAttributes)]
 pub struct HasOne {
     print: Option<()>,
     skip: Option<()>,
+    field_arguments: Option<syn::TypePath>,
     foreign_key_field: Option<syn::Ident>,
     root_model_field: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
     default: Option<()>,
-    field_arguments: Option<syn::TypePath>,
+    child_primary_key_field: Option<syn::Ident>,
+}
+
+impl HasOne {
+    pub fn child_primary_key_field(&self) -> syn::Ident {
+        let child_primary_key_field = &self.child_primary_key_field;
+
+        if let Some(id) = child_primary_key_field {
+            id.clone()
+        } else {
+            format_ident!("id")
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromAttributes)]
@@ -81,18 +102,31 @@ pub struct OptionHasOne {
     graphql_field: Option<syn::Ident>,
     default: Option<()>,
     field_arguments: Option<syn::TypePath>,
+    child_primary_key_field: Option<syn::Ident>,
+}
+
+impl OptionHasOne {
+    pub fn child_primary_key_field(&self) -> syn::Ident {
+        let child_primary_key_field = &self.child_primary_key_field;
+
+        if let Some(id) = child_primary_key_field {
+            id.clone()
+        } else {
+            format_ident!("id")
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromAttributes)]
 pub struct HasMany {
     print: Option<()>,
     skip: Option<()>,
+    field_arguments: Option<syn::TypePath>,
     foreign_key_field: Option<syn::Ident>,
     pub foreign_key_optional: Option<()>,
     root_model_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
-    field_arguments: Option<syn::TypePath>,
 }
 
 impl HasMany {
@@ -105,12 +139,14 @@ impl HasMany {
 pub struct HasManyThrough {
     print: Option<()>,
     skip: Option<()>,
-    join_model: Option<syn::TypePath>,
+    field_arguments: Option<syn::TypePath>,
     model_field: Option<syn::Type>,
+    join_model: Option<syn::TypePath>,
     foreign_key_field: Option<syn::Ident>,
     predicate_method: Option<syn::Ident>,
     graphql_field: Option<syn::Ident>,
-    field_arguments: Option<syn::TypePath>,
+    child_primary_key_field_on_join_model: Option<syn::Ident>,
+    child_primary_key_field: Option<syn::Ident>,
 }
 
 impl HasManyThrough {
@@ -132,15 +168,27 @@ impl HasManyThrough {
         }
     }
 
-    pub fn model_id_field(&self, inner_type: &syn::Type) -> Ident {
-        Ident::new(
-            &format!("{}_id", self.model_field(inner_type)),
-            Span::call_site(),
-        )
+    pub fn child_primary_key_field_on_join_model(&self, inner_type: &syn::Type) -> Ident {
+        if let Some(id) = &self.child_primary_key_field_on_join_model {
+            id.clone()
+        } else {
+            Ident::new(
+                &format!("{}_id", self.model_field(inner_type)),
+                Span::call_site(),
+            )
+        }
     }
 
     pub fn predicate_method(&self) -> &Option<syn::Ident> {
         &self.predicate_method
+    }
+
+    pub fn child_primary_key_field(&self) -> syn::Ident {
+        if let Some(id) = &self.child_primary_key_field {
+            id.clone()
+        } else {
+            format_ident!("id")
+        }
     }
 }
 
