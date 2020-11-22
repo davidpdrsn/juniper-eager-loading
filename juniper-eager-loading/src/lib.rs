@@ -652,7 +652,7 @@ impl<T> HasOneInner<T> {
     fn assert_loaded_otherwise_failed(&mut self) {
         match self {
             HasOneInner::NotLoaded => {
-                std::mem::replace(self, HasOneInner::LoadFailed);
+                *self = HasOneInner::LoadFailed;
             }
             _ => {}
         }

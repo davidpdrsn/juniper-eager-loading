@@ -34,7 +34,7 @@ impl<T> Association<T> for HasOne<Box<T>> {
 }
 
 fn has_one_loaded_child<T>(association: &mut HasOne<T>, child: T) {
-    std::mem::replace(&mut association.0, HasOneInner::Loaded(child));
+    association.0 = HasOneInner::Loaded(child);
 }
 
 fn has_one_assert_loaded_otherwise_failed<T>(association: &mut HasOne<T>) {
@@ -65,14 +65,14 @@ impl<T> Association<T> for OptionHasOne<Box<T>> {
 }
 
 fn option_has_one_loaded_child<T>(association: &mut OptionHasOne<T>, child: Option<T>) {
-    std::mem::replace(&mut association.0, child);
+    association.0 = child;
 }
 
 fn option_has_one_assert_loaded_otherwise_failed<T>(association: &mut OptionHasOne<T>) {
     match association.0 {
         Some(_) => {}
         None => {
-            std::mem::replace(&mut association.0, None);
+            association.0 = None;
         }
     }
 }
