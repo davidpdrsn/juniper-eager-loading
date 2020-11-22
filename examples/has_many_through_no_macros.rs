@@ -128,11 +128,10 @@ impl QueryFields for Query {
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
         let ctx = executor.context();
-        let country_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
-        let mut country = User::from_db_models(&country_models);
-        User::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
+        let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
-        Ok(country)
+        Ok(users)
     }
 }
 
@@ -173,7 +172,7 @@ impl CompanyFields for Company {
     }
 }
 
-impl GraphqlNodeForModel for User {
+impl EagerLoading for User {
     type Model = models::User;
     type Id = i32;
     type Context = Context;
@@ -185,15 +184,14 @@ impl GraphqlNodeForModel for User {
             companies: Default::default(),
         }
     }
-}
 
-impl EagerLoadAllChildren for User {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
+    fn eager_load_each(
         models: &[Self::Model],
         ctx: &Self::Context,
         trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Vec<Self>, Self::Error> {
+        let mut nodes = Self::from_db_models(models);
+
         if let Some(child_trail) = trail.companies().walk() {
             let field_args = trail.companies_args();
 
@@ -201,10 +199,10 @@ impl EagerLoadAllChildren for User {
                 Company,
                 EagerLoadingContextUserForCompanies,
                 _
-            >::eager_load_children(nodes, models, ctx, &child_trail, &field_args)?;
+            >::eager_load_children(&mut nodes, models, ctx, &child_trail, &field_args)?;
         }
 
-        Ok(())
+        Ok(nodes)
     }
 }
 
@@ -257,7 +255,7 @@ impl<'a>
     }
 }
 
-impl GraphqlNodeForModel for Company {
+impl EagerLoading for Company {
     type Model = models::Company;
     type Id = i32;
     type Context = Context;
@@ -268,16 +266,13 @@ impl GraphqlNodeForModel for Company {
             company: model.clone(),
         }
     }
-}
 
-impl EagerLoadAllChildren for Company {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        ctx: &Self::Context,
-        trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
+    fn eager_load_each(
+        _models: &[Self::Model],
+        _ctx: &Self::Context,
+        _trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
+    ) -> Result<Vec<Self>, Self::Error> {
+        Ok(Vec::new())
     }
 }
 

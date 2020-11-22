@@ -15,6 +15,7 @@ version = "0.5.1"
 [dependencies]
 juniper-from-schema = "0.5"
 juniper-eager-loading-code-gen = { version = "0.5.1", path = "../juniper-eager-loading-code-gen" }
+thiserror = "1"
 
 [dev-dependencies]
 juniper = { version = "0.14", features = ["chrono"] }

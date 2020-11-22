@@ -125,11 +125,10 @@ impl QueryFields for Query {
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
         let ctx = executor.context();
-        let country_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
-        let mut country = User::from_db_models(&country_models);
-        User::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
+        let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
-        Ok(country)
+        Ok(users)
     }
 }
 

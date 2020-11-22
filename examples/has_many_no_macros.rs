@@ -94,10 +94,9 @@ impl QueryFields for Query {
     ) -> FieldResult<Vec<Country>> {
         let ctx = executor.context();
         let country_models = db_schema::countries::table.load::<models::Country>(&ctx.db)?;
-        let mut country = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
+        let countries = Country::eager_load_each(&country_models, ctx, trail)?;
 
-        Ok(country)
+        Ok(countries)
     }
 }
 
@@ -138,7 +137,7 @@ impl CountryFields for Country {
     }
 }
 
-impl GraphqlNodeForModel for User {
+impl EagerLoading for User {
     type Model = models::User;
     type Id = i32;
     type Context = Context;
@@ -149,20 +148,17 @@ impl GraphqlNodeForModel for User {
             user: model.clone(),
         }
     }
-}
 
-impl EagerLoadAllChildren for User {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
+    fn eager_load_each(
         models: &[Self::Model],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
+    ) -> Result<Vec<Self>, Self::Error> {
+        Ok(Vec::new())
     }
 }
 
-impl GraphqlNodeForModel for Country {
+impl EagerLoading for Country {
     type Model = models::Country;
     type Id = i32;
     type Context = Context;
@@ -174,15 +170,13 @@ impl GraphqlNodeForModel for Country {
             users: Default::default(),
         }
     }
-}
 
-impl EagerLoadAllChildren for Country {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
+    fn eager_load_each(
         models: &[Self::Model],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Vec<Self>, Self::Error> {
+        let mut nodes = Self::from_db_models(models);
         if let Some(child_trail) = trail.users().walk() {
             let field_args = trail.users_args();
 
@@ -190,10 +184,10 @@ impl EagerLoadAllChildren for Country {
                 User,
                 EagerLoadingContextCountryForUsers,
                 _,
-            >::eager_load_children(nodes, models, ctx, &child_trail, &field_args)?;
+            >::eager_load_children(&mut nodes, models, ctx, &child_trail, &field_args)?;
         }
 
-        Ok(())
+        Ok(nodes)
     }
 }
 

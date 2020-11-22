@@ -209,8 +209,7 @@ impl QueryFields for Query {
             .collect::<Vec<_>>();
         country_models.sort_by_key(|country| country.id);
 
-        let mut countries = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut countries, &country_models, ctx, trail)?;
+        let countries = Country::eager_load_each(&country_models, ctx, trail)?;
 
         Ok(countries)
     }
@@ -307,7 +306,7 @@ fn loading_user() {
         admin: false,
     };
     users.insert(bob.id, bob.clone());
-    users.insert(alice.id, alice.clone());
+    users.insert(alice.id, alice);
 
     let db = Db { users, countries };
     let (json, counts) = run_query(

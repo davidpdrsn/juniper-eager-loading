@@ -366,8 +366,7 @@ impl QueryFields for Query {
             .get(&UserId::from(id))
             .ok_or("User not found")?
             .clone();
-        let user = User::new_from_model(&user_model);
-        let user = User::eager_load_all_children(user, &[user_model], ctx, trail)?;
+        let user = User::eager_load(user_model, ctx, trail)?;
         Ok(user)
     }
 
@@ -387,8 +386,7 @@ impl QueryFields for Query {
             .collect::<Vec<_>>();
         user_models.sort_by_key(|user| user.id);
 
-        let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
         Ok(users)
     }
@@ -1060,7 +1058,7 @@ fn test_loading_has_many_through() {
         company_id: peakon.id,
         primary: false,
     };
-    employments.insert(peakon_employment.id, peakon_employment.clone());
+    employments.insert(peakon_employment.id, peakon_employment);
 
     let db = Db {
         cities,

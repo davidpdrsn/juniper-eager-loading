@@ -10,7 +10,23 @@ None.
 
 ### Breaking changes
 
-None.
+Some nice simplifications of the APIs:
+
+- `GraphqlNodeForModel` and `EagerLoadAllChildren` has been combined into one trait called `EagerLoading`.
+- `EagerLoadAllChildren::eager_load_all_children_for_each` has been renamed to `EagerLoading::eager_load_each`
+- `EagerLoadAllChildren::eager_load_all_children` has been renamed to `EagerLoading::eager_load`
+- The two eager loading methods (formerly `eager_load_all_children_for_each` and `eager_load_all_children`) no longer take `nodes: &mut [Self]`. The modes will be created generically from the models by calling `EagerLoading::from_db_models`.
+
+With these changes eager loading from a `Query` resolver now looks like this:
+
+```rust
+let ctx = executor.context();
+let user_models = ctx.db.load_all_users();
+let users = User::eager_load_each(&user_models, ctx, trail)?;
+Ok(users)
+```
+
+`Error` is now `#[non_exhaustive]`.
 
 ## 0.5.1 - 2020-03-04
 

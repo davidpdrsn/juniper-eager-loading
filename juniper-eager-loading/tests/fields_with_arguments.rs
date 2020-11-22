@@ -209,8 +209,7 @@ impl QueryFields for Query {
             .collect::<Vec<_>>();
         country_models.sort_by_key(|country| country.id);
 
-        let mut countries = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut countries, &country_models, ctx, trail)?;
+        let countries = Country::eager_load_each(&country_models, ctx, trail)?;
 
         Ok(countries)
     }
@@ -282,7 +281,7 @@ impl<'a> EagerLoadChildrenOfType<'a, User, EagerLoadingContextCountryForUsers, (
         field_args: &Self::FieldArguments,
         ctx: &Self::Context,
     ) -> Result<
-        LoadChildrenOutput<<User as juniper_eager_loading::GraphqlNodeForModel>::Model, ()>,
+        LoadChildrenOutput<<User as juniper_eager_loading::EagerLoading>::Model, ()>,
         Self::Error,
     > {
         let children = LoadFrom::load(&models, field_args, ctx)?;

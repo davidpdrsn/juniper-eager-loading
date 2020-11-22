@@ -101,8 +101,7 @@ impl QueryFields for Query {
     ) -> FieldResult<Vec<Country>> {
         let ctx = executor.context();
         let country_models = db_schema::countries::table.load::<models::Country>(&ctx.db)?;
-        let mut country = Country::from_db_models(&country_models);
-        Country::eager_load_all_children_for_each(&mut country, &country_models, ctx, trail)?;
+        let country = Country::eager_load_each(&country_models, ctx, trail)?;
 
         Ok(country)
     }

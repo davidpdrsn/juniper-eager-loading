@@ -12,7 +12,7 @@ macro_rules! token_stream_getter {
             let value = &self.$name;
             quote! { #value }
         }
-    }
+    };
 }
 
 #[derive(Debug, FromAttributes)]

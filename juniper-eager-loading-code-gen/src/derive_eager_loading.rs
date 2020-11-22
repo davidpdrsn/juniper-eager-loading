@@ -44,9 +44,7 @@ struct DeriveData {
 
 impl DeriveData {
     fn build_derive_output(mut self) -> TokenStream {
-        self.gen_graphql_node_for_model();
-        self.gen_eager_load_all_children();
-
+        self.gen_eager_loading();
         self.gen_eager_load_children_of_type();
 
         if self.args.print() {
@@ -54,40 +52,6 @@ impl DeriveData {
         }
 
         self.out
-    }
-
-    fn gen_graphql_node_for_model(&mut self) {
-        let struct_name = self.struct_name();
-        let model = self.model();
-        let id = self.id();
-        let context = self.context();
-        let error = self.error();
-
-        let field_setters = self.struct_fields().map(|field| {
-            let ident = &field.ident;
-
-            if is_association_field(&field.ty) {
-                quote! { #ident: std::default::Default::default() }
-            } else {
-                quote! { #ident: std::clone::Clone::clone(model) }
-            }
-        });
-
-        let code = quote! {
-            impl juniper_eager_loading::GraphqlNodeForModel for #struct_name {
-                type Model = #model;
-                type Id = #id;
-                type Context = #context;
-                type Error = #error;
-
-                fn new_from_model(model: &Self::Model) -> Self {
-                    Self {
-                        #(#field_setters),*
-                    }
-                }
-            }
-        };
-        self.out.extend(code);
     }
 
     fn gen_eager_load_children_of_type(&mut self) {
@@ -218,7 +182,7 @@ impl DeriveData {
                         .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
                         juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
@@ -235,7 +199,7 @@ impl DeriveData {
                         .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
                         juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
@@ -256,7 +220,7 @@ impl DeriveData {
                 };
 
                 quote! {
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
                         juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
 
                     #filter
@@ -288,7 +252,7 @@ impl DeriveData {
 
                     #filter
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model> =
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
                         juniper_eager_loading::LoadFrom::load(&join_models, field_args, ctx)?;
 
                     let mut child_and_join_model_pairs = Vec::new();
@@ -319,7 +283,7 @@ impl DeriveData {
                 ctx: &Self::Context,
             ) -> Result<
                 juniper_eager_loading::LoadChildrenOutput<
-                    <#inner_type as juniper_eager_loading::GraphqlNodeForModel>::Model,
+                    <#inner_type as juniper_eager_loading::EagerLoading>::Model,
                     #join_model
                 >,
                 Self::Error,
@@ -410,31 +374,57 @@ impl DeriveData {
         }
     }
 
-    fn gen_eager_load_all_children(&mut self) {
+    fn gen_eager_loading(&mut self) {
         let struct_name = self.struct_name();
+        let model = self.model();
+        let id = self.id();
+        let context = self.context();
+        let error = self.error();
+
+        let field_setters = self.struct_fields().map(|field| {
+            let ident = &field.ident;
+
+            if is_association_field(&field.ty) {
+                quote! { #ident: std::default::Default::default() }
+            } else {
+                quote! { #ident: std::clone::Clone::clone(model) }
+            }
+        });
 
         let eager_load_children_calls = self
             .struct_fields()
-            .filter_map(|field| self.gen_eager_load_all_children_for_field(field));
+            .filter_map(|field| self.gen_eager_load_for_field(field));
 
         let code = quote! {
-            impl juniper_eager_loading::EagerLoadAllChildren for #struct_name {
-                fn eager_load_all_children_for_each(
-                    nodes: &mut [Self],
+            impl juniper_eager_loading::EagerLoading for #struct_name {
+                type Model = #model;
+                type Id = #id;
+                type Context = #context;
+                type Error = #error;
+
+                fn new_from_model(model: &Self::Model) -> Self {
+                    Self {
+                        #(#field_setters),*
+                    }
+                }
+
+                fn eager_load_each(
                     models: &[Self::Model],
                     ctx: &Self::Context,
                     trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-                ) -> Result<(), Self::Error> {
+                ) -> Result<Vec<Self>, Self::Error> {
+                    let mut nodes = Self::from_db_models(models);
+
                     #(#eager_load_children_calls)*
 
-                    Ok(())
+                    Ok(nodes)
                 }
             }
         };
         self.out.extend(code);
     }
 
-    fn gen_eager_load_all_children_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
+    fn gen_eager_load_for_field(&self, field: &syn::Field) -> Option<TokenStream> {
         let inner_type = get_type_from_association(&field.ty)?;
 
         let data = self.parse_field_args(field)?;
@@ -461,7 +451,7 @@ impl DeriveData {
                 let field_args = trail.#field_args_name();
 
                 EagerLoadChildrenOfType::<#inner_type, #impl_context, _>::eager_load_children(
-                    nodes,
+                    &mut nodes,
                     models,
                     &ctx,
                     &child_trail,

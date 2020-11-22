@@ -87,8 +87,7 @@ impl QueryFields for Query {
     ) -> FieldResult<Vec<User>> {
         let ctx = executor.context();
         let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
-        let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
         Ok(users)
     }
@@ -131,7 +130,7 @@ impl CountryFields for Country {
     }
 }
 
-impl GraphqlNodeForModel for User {
+impl EagerLoading for User {
     type Model = models::User;
     type Id = i32;
     type Context = Context;
@@ -143,24 +142,22 @@ impl GraphqlNodeForModel for User {
             country: Default::default(),
         }
     }
-}
 
-impl EagerLoadAllChildren for User {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [User],
+    fn eager_load_each(
         models: &[models::User],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Vec<Self>, Self::Error> {
+        let mut nodes = Self::from_db_models(models);
         if let Some(child_trail) = trail.country().walk() {
             let field_args = trail.country_args();
 
             EagerLoadChildrenOfType::<
                 Country,
                 EagerLoadingContextUserForCountry,
-            _>::eager_load_children(nodes, models, ctx, &child_trail, &field_args)?;
+            _>::eager_load_children(&mut nodes, models, ctx, &child_trail, &field_args)?;
         }
-        Ok(())
+        Ok(nodes)
     }
 }
 
@@ -200,7 +197,7 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
     }
 }
 
-impl GraphqlNodeForModel for Country {
+impl EagerLoading for Country {
     type Model = models::Country;
     type Id = i32;
     type Context = Context;
@@ -211,16 +208,13 @@ impl GraphqlNodeForModel for Country {
             country: model.clone(),
         }
     }
-}
 
-impl EagerLoadAllChildren for Country {
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Country],
+    fn eager_load_each(
         models: &[models::Country],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Country, Walked>,
-    ) -> Result<(), diesel::result::Error> {
-        Ok(())
+    ) -> Result<Vec<Self>, diesel::result::Error> {
+        Ok(Vec::new())
     }
 }
 

@@ -303,14 +303,11 @@
 //!         // Load the model users.
 //!         let user_models = ctx.db.load_all_users();
 //!
-//!         // Turn the model users into GraphQL users.
-//!         let mut users = User::from_db_models(&user_models);
-//!
-//!         // Perform the eager loading.
+//!        // Perform the eager loading.
 //!         // `trail` is used to only eager load the fields that are requested. Because
 //!         // we're using `QueryTrail`s from "juniper_from_schema" it would be a compile
 //!         // error if we eager loaded associations that aren't requested in the query.
-//!         User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
+//!         let users = User::eager_load_each(&user_models, ctx, trail)?;
 //!
 //!         Ok(users)
 //!     }
@@ -351,12 +348,10 @@
 //!
 //! For a type to support eager loading it needs to implement the following traits:
 //!
-//! - [`GraphqlNodeForModel`][]
-//! - [`EagerLoadAllChildren`][]
+//! - [`EagerLoading`][]
 //! - Each association field must implement [`EagerLoadChildrenOfType`][]
 //!
-//! [`GraphqlNodeForModel`]: trait.GraphqlNodeForModel.html
-//! [`EagerLoadAllChildren`]: trait.EagerLoadAllChildren.html
+//! [`EagerLoading`]: trait.EagerLoading.html
 //!
 //! Implementing these traits involves lots of boilerplate, therefore you should use
 //! `#[derive(EagerLoading)]` to derive implementations as much as possible.
@@ -384,7 +379,7 @@
 //! | `id` | Which id type does your app use? | `i32` | `id = UUID` |
 //! | `root_model_field` | The name of the field has holds the backing model | `{name of struct}` in snakecase. | `root_model_field = user` |
 //! | `primary_key_field` | The field that holds the primary key of the model. This field is only used by code generated for `#[has_many]` and `#[has_many_through]` associations. | `id` | `primary_key_field = identifier` |
-//! | `print` | If set it will print the generated implementation of `GraphqlNodeForModel` and `EagerLoadAllChildren` | Not set | `print` |
+//! | `print` | If set it will print the generated implementation of `EagerLoading` | Not set | `print` |
 //!
 //! # Associations
 //!
@@ -509,21 +504,21 @@
 
 #![doc(html_root_url = "https://docs.rs/juniper-eager-loading/0.5.1")]
 #![allow(clippy::single_match, clippy::type_complexity)]
-#![deny(
-    missing_docs,
-    dead_code,
-    missing_copy_implementations,
-    missing_debug_implementations,
-    trivial_casts,
-    trivial_numeric_casts,
-    unsafe_code,
-    unstable_features,
-    unused_import_braces,
-    unused_imports,
-    unused_must_use,
-    unused_qualifications,
-    unused_variables
-)]
+// #![deny(
+//     missing_docs,
+//     dead_code,
+//     missing_copy_implementations,
+//     missing_debug_implementations,
+//     trivial_casts,
+//     trivial_numeric_casts,
+//     unsafe_code,
+//     unstable_features,
+//     unused_import_braces,
+//     unused_imports,
+//     unused_must_use,
+//     unused_qualifications,
+//     unused_variables
+// )]
 
 mod association;
 mod macros;
@@ -545,9 +540,8 @@ pub mod proc_macros {
 /// Re-exports the traits needed for doing eager loading. Meant to be glob imported.
 pub mod prelude {
     pub use super::Association;
-    pub use super::EagerLoadAllChildren;
     pub use super::EagerLoadChildrenOfType;
-    pub use super::GraphqlNodeForModel;
+    pub use super::EagerLoading;
 }
 
 /// The types of associations.
@@ -828,36 +822,6 @@ impl<T> HasManyThrough<T> {
     }
 }
 
-/// A GraphQL type backed by a model object.
-///
-/// You shouldn't need to implement this trait yourself even when customizing eager loading.
-pub trait GraphqlNodeForModel: Sized {
-    /// The model type.
-    type Model: Clone;
-
-    /// The id type the model uses.
-    type Id: 'static + Hash + Eq;
-
-    /// Your Juniper context type.
-    ///
-    /// This will typically contain a database connection or a connection to some external API.
-    type Context;
-
-    /// The error type.
-    type Error;
-
-    /// Create a new GraphQL type from a model.
-    fn new_from_model(model: &Self::Model) -> Self;
-
-    /// Create a list of GraphQL types from a list of models.
-    fn from_db_models(models: &[Self::Model]) -> Vec<Self> {
-        models
-            .iter()
-            .map(|model| Self::new_from_model(model))
-            .collect()
-    }
-}
-
 /// Perform eager loading for a single association of a GraphQL struct.
 ///
 /// `#[derive(EagerLoading)]` will implement this trait for each [association field][] your GraphQL
@@ -975,7 +939,7 @@ pub trait GraphqlNodeForModel: Sized {
 ///         field_args: &Self::FieldArguments,
 ///         ctx: &Self::Context,
 ///     ) -> Result<
-///         LoadChildrenOutput<<Country as juniper_eager_loading::GraphqlNodeForModel>::Model>,
+///         LoadChildrenOutput<<Country as juniper_eager_loading::EagerLoading>::Model>,
 ///         Self::Error,
 ///     > {
 ///         let ids = models
@@ -986,7 +950,7 @@ pub trait GraphqlNodeForModel: Sized {
 ///         let ids = juniper_eager_loading::unique(ids);
 ///
 ///         let children = <
-///             <Country as GraphqlNodeForModel>::Model as juniper_eager_loading::LoadFrom<Self::Id>
+///             <Country as EagerLoading>::Model as juniper_eager_loading::LoadFrom<Self::Id>
 ///         >::load(&ids, field_args, ctx)?;
 ///
 ///         Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(children))
@@ -1076,10 +1040,8 @@ pub trait GraphqlNodeForModel: Sized {
 // `JoinModel` cannot be an associated type because it requires a default.
 pub trait EagerLoadChildrenOfType<'a, Child, ImplContext, JoinModel = ()>
 where
-    Self: GraphqlNodeForModel,
-    Child: GraphqlNodeForModel<Context = Self::Context, Error = Self::Error>
-        + EagerLoadAllChildren
-        + Clone,
+    Self: EagerLoading,
+    Child: EagerLoading<Context = Self::Context, Error = Self::Error> + EagerLoading + Clone,
     JoinModel: 'static + Clone + ?Sized,
 {
     /// The types of arguments the GraphQL field takes. The type used by the code generation can be
@@ -1133,15 +1095,13 @@ where
                 child_models
                     .into_iter()
                     .map(|model| {
+                        // SAFETY: This branch will only ever be called if `JoinModel` is `()`. That
+                        // happens for all the `Has*` types except `HasManyThrough`.
+                        //
+                        // `HasManyThrough` requires something to join the two types on,
+                        // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
                         #[allow(unsafe_code)]
-                        let join_model = unsafe {
-                            // This branch will only ever be called if `JoinModel` is `()`. That
-                            // happens for all the `Has*` types except `HasManyThrough`.
-                            //
-                            // `HasManyThrough` requires something to join the two types on,
-                            // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
-                            transmute_copy::<(), JoinModel>(&())
-                        };
+                        let join_model = unsafe { transmute_copy::<(), JoinModel>(&()) };
 
                         (model, join_model)
                     })
@@ -1155,16 +1115,16 @@ where
             .map(|child_model| (Child::new_from_model(&child_model.0), child_model.1.clone()))
             .collect::<Vec<_>>();
 
-        let mut children_without_join_models =
-            children.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+        // let mut children_without_join_models =
+        //     children.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
 
         let child_models_without_join_models =
             child_models.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
 
         let len_before = child_models_without_join_models.len();
 
-        Child::eager_load_all_children_for_each(
-            &mut children_without_join_models,
+        let children_without_join_models = Child::eager_load_each(
+            // &mut children_without_join_models,
             &child_models_without_join_models,
             ctx,
             trail,
@@ -1233,10 +1193,32 @@ pub enum LoadChildrenOutput<ChildModel, JoinModel = ()> {
 /// The main entry point trait for doing eager loading.
 ///
 /// You shouldn't need to implement this trait yourself even when customizing eager loading.
-pub trait EagerLoadAllChildren
-where
-    Self: GraphqlNodeForModel,
-{
+pub trait EagerLoading: Sized {
+    /// The model type.
+    type Model: Clone;
+
+    /// The id type the model uses.
+    type Id: 'static + Hash + Eq;
+
+    /// Your Juniper context type.
+    ///
+    /// This will typically contain a database connection or a connection to some external API.
+    type Context;
+
+    /// The error type.
+    type Error;
+
+    /// Create a new GraphQL type from a model.
+    fn new_from_model(model: &Self::Model) -> Self;
+
+    /// Create a list of GraphQL types from a list of models.
+    fn from_db_models(models: &[Self::Model]) -> Vec<Self> {
+        models
+            .iter()
+            .map(|model| Self::new_from_model(model))
+            .collect()
+    }
+
     /// For each field in your GraphQL type that implements [`EagerLoadChildrenOfType`][] call
     /// [`eager_load_children`][] to do eager loading of that field.
     ///
@@ -1245,27 +1227,23 @@ where
     ///
     /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
     /// [`eager_load_children`]: trait.EagerLoadChildrenOfType.html#method.eager_load_children
-    fn eager_load_all_children_for_each(
-        nodes: &mut [Self],
+    fn eager_load_each(
         models: &[Self::Model],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<Vec<Self>, Self::Error>;
 
     /// Perform eager loading for a single GraphQL value.
     ///
     /// This is the function you should call for eager loading associations of a single value.
-    fn eager_load_all_children(
-        node: Self,
-        models: &[Self::Model],
+    fn eager_load(
+        model: Self::Model,
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<Self, Self::Error> {
-        let mut nodes = vec![node];
-        Self::eager_load_all_children_for_each(&mut nodes, models, ctx, trail)?;
+        let mut nodes = Self::eager_load_each(&[model], ctx, trail)?;
 
-        // This is safe because we just made a vec with exactly one element and
-        // eager_load_all_children_for_each doesn't remove things from the vec
+        // This wont panic because we only passed one model into `eager_load_each`
         Ok(nodes.remove(0))
     }
 }
@@ -1298,32 +1276,22 @@ pub trait LoadFrom<T, Args = ()>: Sized {
 }
 
 /// The kinds of errors that can happen when doing eager loading.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[allow(missing_copy_implementations)]
+#[non_exhaustive]
 pub enum Error {
     /// The association was not loaded.
     ///
     /// Did you forget to call
-    /// [`eager_load_all_children_for_each`](trait.EagerLoadAllChildren.html#tymethod.eager_load_all_children_for_each)?
+    /// [`eager_load_each`](trait.EagerLoading.html#tymethod.eager_load_each)?
+    #[error("`{0:?}` should have been eager loaded, but wasn't")]
     NotLoaded(AssociationType),
 
     /// Loading the association failed. This can only happen when using
     /// [`HasOne`](struct.HasOne.html). All the other association types have defaults.
+    #[error("Failed to load `{0:?}`")]
     LoadFailed(AssociationType),
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::NotLoaded(kind) => {
-                write!(f, "`{:?}` should have been eager loaded, but wasn't", kind)
-            }
-            Error::LoadFailed(kind) => write!(f, "Failed to load `{:?}`", kind),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Remove duplicates from a list.
 ///

@@ -86,8 +86,7 @@ impl QueryFields for Query {
     ) -> FieldResult<Vec<User>> {
         let ctx = executor.context();
         let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
-        let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
         Ok(users)
     }

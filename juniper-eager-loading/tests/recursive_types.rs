@@ -84,8 +84,7 @@ impl QueryFields for Query {
             .collect::<Vec<_>>();
         user_models.sort_by_key(|user| user.id);
 
-        let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, ctx, trail)?;
+        let users = User::eager_load_each(&user_models, ctx, trail)?;
 
         Ok(users)
     }

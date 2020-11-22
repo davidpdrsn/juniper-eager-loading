@@ -109,8 +109,7 @@ impl QueryFields for Query {
             .into_iter()
             .cloned()
             .collect::<Vec<_>>();
-        let mut users = User::from_db_models(&user_models);
-        User::eager_load_all_children_for_each(&mut users, &user_models, &ctx, &trail.downcast())?;
+        let users = User::eager_load_each(&user_models, &ctx, &trail.downcast())?;
 
         let mut city_models = ctx
             .db
@@ -119,8 +118,7 @@ impl QueryFields for Query {
             .into_iter()
             .cloned()
             .collect::<Vec<_>>();
-        let mut cities = City::from_db_models(&city_models);
-        City::eager_load_all_children_for_each(&mut cities, &city_models, &ctx, &trail.downcast())?;
+        let cities = City::eager_load_each(&city_models, &ctx, &trail.downcast())?;
 
         let mut has_countries = vec![];
         has_countries.extend(users.into_iter().map(HasCountry::from).collect::<Vec<_>>());
