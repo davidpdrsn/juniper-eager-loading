@@ -3,6 +3,7 @@
 mod helpers;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
+use futures::executor::block_on;
 use helpers::{SortedExtension, StatsHash};
 use juniper::{Executor, FieldError, FieldResult};
 use juniper_eager_loading::{
@@ -68,7 +69,11 @@ graphql_schema! {
     }
 }
 
+type BoxedFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
+
 mod models {
+    use futures::future::{ready, Ready};
+
     macro_rules! make_model_ids {
         ( $($name:ident),* ) => {
             $(
@@ -139,187 +144,80 @@ mod models {
         pub reviewer_id: Option<UserId>,
     }
 
-    impl juniper_eager_loading::LoadFrom<CountryId> for Country {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
+    macro_rules! impl_load_from {
+        (
+            $model:ident,
+            $id_ty:ident,
+            $db_field:ident $(,)?
+        ) => {
+            impl<'a> juniper_eager_loading::LoadFrom<'a, $id_ty> for $model {
+                type Error = Box<dyn std::error::Error>;
+                type Context = super::Context;
+                type Future = Ready<Result<Vec<Self>, Self::Error>>;
 
-        fn load(ids: &[CountryId], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let countries = ctx
-                .db
-                .countries
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(countries)
-        }
+                fn load(ids: &'a [$id_ty], _: &'a (), ctx: &'a Self::Context) -> Self::Future {
+                    let models = ctx
+                        .db
+                        .$db_field
+                        .all_values()
+                        .into_iter()
+                        .filter(|value| ids.contains(&value.id))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    ready(Ok(models))
+                }
+            }
+        };
+
+        (
+            $model:ident,
+            $source:ident,
+            $db_field:ident,
+            $id_field:ident,
+            $foreign_key_field:ident
+            $(,)?
+        ) => {
+            impl<'a> juniper_eager_loading::LoadFrom<'a, $source> for $model {
+                type Error = Box<dyn std::error::Error>;
+                type Context = super::Context;
+                type Future = Ready<Result<Vec<Self>, Self::Error>>;
+
+                fn load(models: &'a [$source], _: &'a (), ctx: &'a Self::Context) -> Self::Future {
+                    let ids = models
+                        .iter()
+                        .map(|model| model.$id_field)
+                        .collect::<Vec<_>>();
+                    let mut join_models = ctx
+                        .db
+                        .$db_field
+                        .all_values()
+                        .into_iter()
+                        .filter(|join_model| ids.contains(&join_model.$foreign_key_field))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    ready(Ok(join_models))
+                }
+            }
+        };
     }
 
-    impl juniper_eager_loading::LoadFrom<CityId> for City {
+    impl_load_from!(Country, CountryId, countries);
+    impl_load_from!(City, CityId, cities);
+    impl_load_from!(User, UserId, users);
+    impl_load_from!(Company, CompanyId, companies);
+    impl_load_from!(Employment, EmploymentId, employments);
+    impl_load_from!(Issue, IssueId, issues);
+
+    impl_load_from!(City, Country, cities, id, country_id);
+    impl_load_from!(Employment, User, employments, id, user_id);
+    impl_load_from!(Company, Employment, companies, company_id, id);
+
+    impl<'a> juniper_eager_loading::LoadFrom<'a, User> for Issue {
         type Error = Box<dyn std::error::Error>;
         type Context = super::Context;
+        type Future = Ready<Result<Vec<Self>, Self::Error>>;
 
-        fn load(ids: &[CityId], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let countries = ctx
-                .db
-                .cities
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(countries)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<UserId> for User {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(ids: &[UserId], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let models = ctx
-                .db
-                .users
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(models)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<CompanyId> for Company {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(ids: &[CompanyId], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let models = ctx
-                .db
-                .companies
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(models)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<EmploymentId> for Employment {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(
-            ids: &[EmploymentId],
-            _: &(),
-            ctx: &Self::Context,
-        ) -> Result<Vec<Self>, Self::Error> {
-            let models = ctx
-                .db
-                .employments
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(models)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<IssueId> for Issue {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(ids: &[IssueId], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let models = ctx
-                .db
-                .issues
-                .all_values()
-                .into_iter()
-                .filter(|value| ids.contains(&value.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(models)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<Country> for City {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(
-            countries: &[Country],
-            _: &(),
-            ctx: &Self::Context,
-        ) -> Result<Vec<Self>, Self::Error> {
-            let country_ids = countries
-                .iter()
-                .map(|country| country.id)
-                .collect::<Vec<_>>();
-            let mut cities = ctx
-                .db
-                .cities
-                .all_values()
-                .into_iter()
-                .filter(|city| country_ids.contains(&city.country_id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(cities)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<User> for Employment {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(users: &[User], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
-            let user_ids = users.iter().map(|user| user.id).collect::<Vec<_>>();
-            let employments = ctx
-                .db
-                .employments
-                .all_values()
-                .into_iter()
-                .filter(|employment| user_ids.contains(&employment.user_id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok(employments)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<Employment> for Company {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(
-            employments: &[Employment],
-            _: &(),
-            ctx: &Self::Context,
-        ) -> Result<Vec<Self>, Self::Error> {
-            let company_ids = employments
-                .iter()
-                .map(|employment| employment.company_id)
-                .collect::<Vec<_>>();
-
-            let employments = ctx
-                .db
-                .companies
-                .all_values()
-                .into_iter()
-                .filter(|company| company_ids.contains(&company.id))
-                .cloned()
-                .collect::<Vec<_>>();
-
-            Ok(employments)
-        }
-    }
-
-    impl juniper_eager_loading::LoadFrom<User> for Issue {
-        type Error = Box<dyn std::error::Error>;
-        type Context = super::Context;
-
-        fn load(users: &[User], _: &(), ctx: &Self::Context) -> Result<Vec<Self>, Self::Error> {
+        fn load(users: &'a [User], _: &'a (), ctx: &'a Self::Context) -> Self::Future {
             let user_ids = users.iter().map(|user| Some(user.id)).collect::<Vec<_>>();
             let issues = ctx
                 .db
@@ -329,7 +227,7 @@ mod models {
                 .filter(|issue| user_ids.contains(&issue.reviewer_id))
                 .cloned()
                 .collect::<Vec<_>>();
-            Ok(issues)
+            ready(Ok(issues))
         }
     }
 }
@@ -358,16 +256,20 @@ impl QueryFields for Query {
         trail: &QueryTrail<'a, User, Walked>,
         id: i32,
     ) -> FieldResult<User> {
-        let ctx = executor.context();
+        block_on(async move {
+            let ctx = executor.context();
 
-        let user_model = ctx
-            .db
-            .users
-            .get(&UserId::from(id))
-            .ok_or("User not found")?
-            .clone();
-        let user = User::eager_load(user_model, ctx, trail)?;
-        Ok(user)
+            let user_model = ctx
+                .db
+                .users
+                .get(&UserId::from(id))
+                .ok_or("User not found")?
+                .clone();
+            let user = User::eager_load_each(vec![user_model], ctx, trail)
+                .await?
+                .remove(0);
+            Ok(user)
+        })
     }
 
     fn field_users<'a>(
@@ -375,20 +277,22 @@ impl QueryFields for Query {
         executor: &Executor<'a, Context>,
         trail: &QueryTrail<'a, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let ctx = executor.context();
+        block_on(async move {
+            let ctx = executor.context();
 
-        let mut user_models = ctx
-            .db
-            .users
-            .all_values()
-            .into_iter()
-            .cloned()
-            .collect::<Vec<_>>();
-        user_models.sort_by_key(|user| user.id);
+            let mut user_models = ctx
+                .db
+                .users
+                .all_values()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            user_models.sort_by_key(|user| user.id);
 
-        let users = User::eager_load_each(&user_models, ctx, trail)?;
+            let users = User::eager_load_each(user_models, ctx, trail).await?;
 
-        Ok(users)
+            Ok(users)
+        })
     }
 }
 
@@ -405,6 +309,7 @@ impl MutationFields for Mutation {
 #[eager_loading(
     error = Box<dyn std::error::Error>,
     context = Context,
+    // print,
     // model = "models::User",
     // id = "i32",
     // root_model_field = "user"
@@ -412,17 +317,9 @@ impl MutationFields for Mutation {
 pub struct User {
     user: models::User,
 
-    // #[has_one(
-    //     foreign_key_field = country_id,
-    //     root_model_field = country
-    // )]
     #[has_one(default)]
     country: HasOne<Country>,
 
-    // #[has_one(
-    //     foreign_key_field = city_id,
-    //     root_model_field = city
-    // )]
     #[option_has_one(default)]
     city: OptionHasOne<City>,
 
@@ -430,7 +327,6 @@ pub struct User {
     employments: HasMany<Employment>,
 
     #[has_many_through(
-        // model_field = company,
         join_model = models::Employment,
     )]
     companies: HasManyThrough<Company>,
