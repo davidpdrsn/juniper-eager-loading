@@ -523,7 +523,10 @@
 mod association;
 mod macros;
 
+use async_trait::async_trait;
 use juniper_from_schema::{QueryTrail, Walked};
+use std::future::Future;
+use std::pin::Pin;
 use std::{hash::Hash, mem::transmute_copy};
 
 pub use association::Association;
@@ -1038,20 +1041,21 @@ impl<T> HasManyThrough<T> {
 /// [`LoadFrom`]: trait.LoadFrom.html
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 // `JoinModel` cannot be an associated type because it requires a default.
+#[async_trait]
 pub trait EagerLoadChildrenOfType<'a, Child, ImplContext, JoinModel = ()>
 where
-    Self: EagerLoading,
-    Child: EagerLoading<Context = Self::Context, Error = Self::Error> + EagerLoading + Clone,
-    JoinModel: 'static + Clone + ?Sized,
+    Self: EagerLoading<'a>,
+    Child: EagerLoading<'a, Context = Self::Context, Error = Self::Error> + Clone,
+    JoinModel: 'static + Clone + ?Sized + Send,
 {
     /// The types of arguments the GraphQL field takes. The type used by the code generation can be
     /// customized with [`field_arguments = SomeType`][].
     ///
     /// [`field_arguments = SomeType`]: index.html#fields_arguments
-    type FieldArguments;
+    type FieldArguments: 'a + Sync;
 
     /// Load the children from the data store.
-    fn load_children(
+    async fn load_children(
         models: &[Self::Model],
         field_args: &Self::FieldArguments,
         ctx: &Self::Context,
@@ -1082,82 +1086,75 @@ where
     /// Combine all the methods above to eager load the children for a list of GraphQL values and
     /// models.
     fn eager_load_children(
-        nodes: &mut [Self],
-        models: &[Self::Model],
-        ctx: &Self::Context,
-        trail: &QueryTrail<'a, Child, Walked>,
-        field_args: &Self::FieldArguments,
-    ) -> Result<(), Self::Error> {
-        let child_models = match Self::load_children(models, field_args, ctx)? {
-            LoadChildrenOutput::ChildModels(child_models) => {
-                assert!(same_type::<JoinModel, ()>());
+        nodes: &'a mut [Self],
+        models: &'a [Self::Model],
+        ctx: &'a Self::Context,
+        trail: &'a QueryTrail<'_, Child, Walked>,
+        field_args: &'a Self::FieldArguments,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let child_models = match Self::load_children(models, field_args, ctx).await? {
+                LoadChildrenOutput::ChildModels(child_models) => {
+                    assert!(same_type::<JoinModel, ()>());
 
-                child_models
-                    .into_iter()
-                    .map(|model| {
-                        // SAFETY: This branch will only ever be called if `JoinModel` is `()`. That
-                        // happens for all the `Has*` types except `HasManyThrough`.
-                        //
-                        // `HasManyThrough` requires something to join the two types on,
-                        // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
-                        #[allow(unsafe_code)]
-                        let join_model = unsafe { transmute_copy::<(), JoinModel>(&()) };
+                    child_models
+                        .into_iter()
+                        .map(|model| {
+                            // SAFETY: This branch will only ever be called if `JoinModel` is `()`. That
+                            // happens for all the `Has*` types except `HasManyThrough`.
+                            //
+                            // `HasManyThrough` requires something to join the two types on,
+                            // therefore `child_ids` will return a variant of `LoadChildrenOutput::Models`
+                            #[allow(unsafe_code)]
+                            let join_model = unsafe { transmute_copy::<(), JoinModel>(&()) };
 
-                        (model, join_model)
-                    })
-                    .collect::<Vec<_>>()
-            }
-            LoadChildrenOutput::ChildAndJoinModels(model_and_join_pairs) => model_and_join_pairs,
-        };
+                            (model, join_model)
+                        })
+                        .collect::<Vec<_>>()
+                }
+                LoadChildrenOutput::ChildAndJoinModels(model_and_join_pairs) => {
+                    model_and_join_pairs
+                }
+            };
 
-        let children = child_models
-            .iter()
-            .map(|child_model| (Child::new_from_model(&child_model.0), child_model.1.clone()))
-            .collect::<Vec<_>>();
-
-        // let mut children_without_join_models =
-        //     children.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
-
-        let child_models_without_join_models =
-            child_models.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
-
-        let len_before = child_models_without_join_models.len();
-
-        let children_without_join_models = Child::eager_load_each(
-            // &mut children_without_join_models,
-            &child_models_without_join_models,
-            ctx,
-            trail,
-        )?;
-
-        assert_eq!(len_before, child_models_without_join_models.len());
-
-        let children = children_without_join_models
-            .into_iter()
-            .enumerate()
-            .map(|(idx, child)| {
-                let join_model = &children[idx].1;
-                (child, join_model)
-            })
-            .collect::<Vec<_>>();
-
-        for node in nodes {
-            let matching_children = children
+            let children = child_models
                 .iter()
-                .filter(|child_model| {
-                    Self::is_child_of(node, &child_model.0, &child_model.1, field_args, ctx)
-                })
-                .cloned()
+                .map(|child_model| (Child::new_from_model(&child_model.0), child_model.1.clone()))
                 .collect::<Vec<_>>();
 
-            for child in matching_children {
-                Self::association(node).loaded_child(child.0);
+            let child_models_without_join_models =
+                child_models.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+
+            let children_without_join_models =
+                Child::eager_load_each(child_models_without_join_models, ctx, trail).await?;
+
+            let children = children_without_join_models
+                .into_iter()
+                .enumerate()
+                .map(|(idx, child)| {
+                    let join_model = &children[idx].1;
+                    (child, join_model)
+                })
+                .collect::<Vec<_>>();
+
+            for node in nodes {
+                let matching_children = children
+                    .iter()
+                    .filter(|child_model| {
+                        Self::is_child_of(node, &child_model.0, &child_model.1, field_args, ctx)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                for child in matching_children {
+                    Self::association(node).loaded_child(child.0);
+                }
+
+                Self::association(node).assert_loaded_otherwise_failed();
             }
 
-            Self::association(node).assert_loaded_otherwise_failed();
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -1193,9 +1190,10 @@ pub enum LoadChildrenOutput<ChildModel, JoinModel = ()> {
 /// The main entry point trait for doing eager loading.
 ///
 /// You shouldn't need to implement this trait yourself even when customizing eager loading.
-pub trait EagerLoading: Sized {
+#[async_trait]
+pub trait EagerLoading<'a>: Sized + Send + Sync {
     /// The model type.
-    type Model: Clone;
+    type Model: Clone + Send + Sync;
 
     /// The id type the model uses.
     type Id: 'static + Hash + Eq;
@@ -1203,7 +1201,7 @@ pub trait EagerLoading: Sized {
     /// Your Juniper context type.
     ///
     /// This will typically contain a database connection or a connection to some external API.
-    type Context;
+    type Context: Sync;
 
     /// The error type.
     type Error;
@@ -1227,25 +1225,27 @@ pub trait EagerLoading: Sized {
     ///
     /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
     /// [`eager_load_children`]: trait.EagerLoadChildrenOfType.html#method.eager_load_children
-    fn eager_load_each(
-        models: &[Self::Model],
+    async fn eager_load_each(
+        models: Vec<Self::Model>,
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<Vec<Self>, Self::Error>;
 
+    /*
     /// Perform eager loading for a single GraphQL value.
     ///
     /// This is the function you should call for eager loading associations of a single value.
-    fn eager_load(
+    async fn eager_load(
         model: Self::Model,
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<Self, Self::Error> {
-        let mut nodes = Self::eager_load_each(&[model], ctx, trail)?;
+        let mut nodes = Self::eager_load_each(&[model], ctx, trail).await?;
 
         // This wont panic because we only passed one model into `eager_load_each`
         Ok(nodes.remove(0))
     }
+    */
 }
 
 /// How should associated values actually be loaded?
@@ -1262,6 +1262,7 @@ pub trait EagerLoading: Sized {
 ///
 /// [`HasMany`]: struct.HasMany.html
 /// [`HasManyThrough`]: struct.HasManyThrough.html
+#[async_trait]
 pub trait LoadFrom<T, Args = ()>: Sized {
     /// The error type. This must match the error set in `#[eager_loading(error_type = _)]`.
     type Error;
@@ -1272,7 +1273,11 @@ pub trait LoadFrom<T, Args = ()>: Sized {
     type Context;
 
     /// Perform the load.
-    fn load(ids: &[T], args: &Args, context: &Self::Context) -> Result<Vec<Self>, Self::Error>;
+    async fn load(
+        ids: &[T],
+        args: &Args,
+        context: &Self::Context,
+    ) -> Result<Vec<Self>, Self::Error>;
 }
 
 /// The kinds of errors that can happen when doing eager loading.

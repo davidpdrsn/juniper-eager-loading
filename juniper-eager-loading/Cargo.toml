@@ -16,6 +16,7 @@ version = "0.5.1"
 juniper-from-schema = "0.5"
 juniper-eager-loading-code-gen = { version = "0.5.1", path = "../juniper-eager-loading-code-gen" }
 thiserror = "1"
+async-trait = "0.1"
 
 [dev-dependencies]
 juniper = { version = "0.14", features = ["chrono"] }
@@ -27,6 +28,7 @@ trybuild = "1"
 static_assertions = "1"
 either = "1"
 chrono = "0.4"
+futures = "0.3"
 
 [[example]]
 name = "has_one"

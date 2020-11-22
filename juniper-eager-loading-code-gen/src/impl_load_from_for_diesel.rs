@@ -217,11 +217,12 @@ impl HasMany {
         };
 
         out.extend(quote! {
+            #[async_trait::async_trait]
             impl juniper_eager_loading::LoadFrom<#join_ty> for #self_ty {
                 type Error = #error_ty;
                 type Context = #context_ty;
 
-                fn load(
+                async fn load(
                     froms: &[#join_ty],
                     _field_args: &(),
                     ctx: &Self::Context,

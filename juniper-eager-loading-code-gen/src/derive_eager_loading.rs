@@ -79,6 +79,7 @@ impl DeriveData {
             #[allow(missing_docs, dead_code)]
             struct #context;
 
+            #[async_trait::async_trait]
             impl<'a> juniper_eager_loading::EagerLoadChildrenOfType<
                 'a,
                 #inner_type,
@@ -277,7 +278,7 @@ impl DeriveData {
 
         quote! {
             #[allow(unused_variables)]
-            fn load_children(
+            async fn load_children(
                 models: &[Self::Model],
                 field_args: &Self::FieldArguments,
                 ctx: &Self::Context,
@@ -396,6 +397,7 @@ impl DeriveData {
             .filter_map(|field| self.gen_eager_load_for_field(field));
 
         let code = quote! {
+            #[async_trait::async_trait]
             impl juniper_eager_loading::EagerLoading for #struct_name {
                 type Model = #model;
                 type Id = #id;
@@ -408,7 +410,7 @@ impl DeriveData {
                     }
                 }
 
-                fn eager_load_each(
+                async fn eager_load_each(
                     models: &[Self::Model],
                     ctx: &Self::Context,
                     trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
@@ -456,7 +458,7 @@ impl DeriveData {
                     &ctx,
                     &child_trail,
                     &field_args,
-                )?;
+                ).await?;
             }
         })
     }

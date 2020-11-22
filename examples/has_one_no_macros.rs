@@ -4,10 +4,11 @@
 #[macro_use]
 extern crate diesel;
 
+use async_trait::async_trait;
 use juniper::{Executor, FieldResult};
 use juniper_eager_loading::{prelude::*, EagerLoading, HasOne, LoadChildrenOutput, LoadFrom};
 use juniper_from_schema::graphql_schema;
-use std::error::Error;
+use std::{error::Error, sync::Mutex};
 
 // the examples all use Diesel, but this library is data store agnostic
 use diesel::prelude::*;
@@ -47,6 +48,7 @@ mod db_schema {
 }
 
 mod models {
+    use async_trait::async_trait;
     use diesel::prelude::*;
 
     #[derive(Clone, Debug, Queryable)]
@@ -60,11 +62,12 @@ mod models {
         pub id: i32,
     }
 
+    #[async_trait]
     impl juniper_eager_loading::LoadFrom<i32> for Country {
         type Error = diesel::result::Error;
         type Context = super::Context;
 
-        fn load(
+        async fn load(
             ids: &[i32],
             _field_args: &(),
             ctx: &Self::Context,
@@ -72,7 +75,9 @@ mod models {
             use crate::db_schema::countries::dsl::*;
             use diesel::pg::expression::dsl::any;
 
-            countries.filter(id.eq(any(ids))).load::<Country>(&ctx.db)
+            countries
+                .filter(id.eq(any(ids)))
+                .load::<Country>(&*ctx.db.lock().unwrap())
         }
     }
 }
@@ -85,16 +90,19 @@ impl QueryFields for Query {
         executor: &Executor<'_, Context>,
         trail: &QueryTrail<'_, User, Walked>,
     ) -> FieldResult<Vec<User>> {
-        let ctx = executor.context();
-        let user_models = db_schema::users::table.load::<models::User>(&ctx.db)?;
-        let users = User::eager_load_each(&user_models, ctx, trail)?;
+        futures::executor::block_on(async move {
+            let ctx = executor.context();
+            let user_models =
+                db_schema::users::table.load::<models::User>(&*ctx.db.lock().unwrap())?;
+            let users = User::eager_load_each(user_models, ctx, trail).await?;
 
-        Ok(users)
+            Ok(users)
+        })
     }
 }
 
 pub struct Context {
-    db: PgConnection,
+    db: Mutex<PgConnection>,
 }
 
 impl juniper::Context for Context {}
@@ -130,7 +138,8 @@ impl CountryFields for Country {
     }
 }
 
-impl EagerLoading for User {
+#[async_trait]
+impl<'a> EagerLoading<'a> for User {
     type Model = models::User;
     type Id = i32;
     type Context = Context;
@@ -143,41 +152,44 @@ impl EagerLoading for User {
         }
     }
 
-    fn eager_load_each(
-        models: &[models::User],
+    async fn eager_load_each(
+        models: Vec<models::User>,
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<Vec<Self>, Self::Error> {
-        let mut nodes = Self::from_db_models(models);
+        let mut nodes = Self::from_db_models(&models);
+
         if let Some(child_trail) = trail.country().walk() {
             let field_args = trail.country_args();
 
             EagerLoadChildrenOfType::<
                 Country,
                 EagerLoadingContextUserForCountry,
-            _>::eager_load_children(&mut nodes, models, ctx, &child_trail, &field_args)?;
+            _>::eager_load_children(&mut nodes, &models, ctx, &child_trail, &field_args).await?;
         }
+
         Ok(nodes)
     }
 }
 
 struct EagerLoadingContextUserForCountry;
 
+#[async_trait]
 impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry, ()> for User {
     type FieldArguments = ();
 
-    fn load_children(
+    async fn load_children(
         models: &[models::User],
         field_args: &Self::FieldArguments,
-        ctx: &Self::Context,
-    ) -> Result<LoadChildrenOutput<models::Country>, diesel::result::Error> {
+        ctx: &Context,
+    ) -> Result<LoadChildrenOutput<models::Country, ()>, diesel::result::Error> {
         let ids = models
             .iter()
             .map(|model| model.country_id)
             .collect::<Vec<_>>();
         let ids = juniper_eager_loading::unique(ids);
 
-        let child_models: Vec<models::Country> = LoadFrom::load(&ids, field_args, ctx)?;
+        let child_models: Vec<models::Country> = LoadFrom::load(&ids, field_args, ctx).await?;
 
         Ok(LoadChildrenOutput::ChildModels(child_models))
     }
@@ -197,7 +209,8 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
     }
 }
 
-impl EagerLoading for Country {
+#[async_trait]
+impl<'a> EagerLoading<'a> for Country {
     type Model = models::Country;
     type Id = i32;
     type Context = Context;
@@ -209,11 +222,11 @@ impl EagerLoading for Country {
         }
     }
 
-    fn eager_load_each(
-        models: &[models::Country],
+    async fn eager_load_each(
+        models: Vec<Self::Model>,
         ctx: &Self::Context,
-        trail: &QueryTrail<'_, Country, Walked>,
-    ) -> Result<Vec<Self>, diesel::result::Error> {
+        trail: &QueryTrail<'_, Self, Walked>,
+    ) -> Result<Vec<Self>, Self::Error> {
         Ok(Vec::new())
     }
 }
