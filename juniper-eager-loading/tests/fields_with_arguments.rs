@@ -339,7 +339,7 @@ fn loading_user() {
         admin: false,
     };
     users.insert(bob.id, bob.clone());
-    users.insert(alice.id, alice.clone());
+    users.insert(alice.id, alice);
 
     let db = Db { users, countries };
     let (json, counts) = run_query(

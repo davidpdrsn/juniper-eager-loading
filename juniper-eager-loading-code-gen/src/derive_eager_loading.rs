@@ -523,9 +523,9 @@ fn get_type_from_association(ty: &syn::Type) -> Option<&syn::Type> {
     let type_path = if_let_or_none!(Type::Path, ty);
     let path = &type_path.path;
     let segments = &path.segments;
-    let segment = if_let_or_none!(Some, segments.last());
+    let segment = segments.last()?;
     let args = if_let_or_none!(PathArguments::AngleBracketed, &segment.arguments);
-    let generic_argument: &syn::GenericArgument = if_let_or_none!(Some, args.args.last());
+    let generic_argument: &syn::GenericArgument = args.args.last()?;
     let ty = if_let_or_none!(GenericArgument::Type, generic_argument);
     Some(remove_possible_box_wrapper(ty))
 }
@@ -566,7 +566,7 @@ fn last_ident_in_type_segment(ty: &syn::Type) -> Option<&syn::Ident> {
     let type_path = if_let_or_none!(Type::Path, ty);
     let path = &type_path.path;
     let segments = &path.segments;
-    let segment = if_let_or_none!(Some, segments.last());
+    let segment = segments.last()?;
     Some(&segment.ident)
 }
 

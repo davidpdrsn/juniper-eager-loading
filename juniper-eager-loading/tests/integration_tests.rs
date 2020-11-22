@@ -1153,7 +1153,7 @@ fn test_loading_has_many_fk_optional() {
         title: "This issue hasn't been assigned to somebody".to_string(),
         reviewer_id: None,
     };
-    issues.insert(unassigned_issue.id, unassigned_issue.clone());
+    issues.insert(unassigned_issue.id, unassigned_issue);
 
     let db = Db {
         cities: StatsHash::new("cities"),

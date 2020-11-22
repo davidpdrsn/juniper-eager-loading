@@ -182,7 +182,7 @@ fn loading_recursive_type() {
                 },
             ]
         }),
-        actual: json.clone(),
+        actual: json,
     );
 }
 

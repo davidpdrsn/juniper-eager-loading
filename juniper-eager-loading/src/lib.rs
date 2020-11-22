@@ -524,7 +524,7 @@ mod association;
 mod macros;
 
 use juniper_from_schema::{QueryTrail, Walked};
-use std::{fmt, hash::Hash, mem::transmute_copy};
+use std::{hash::Hash, mem::transmute_copy};
 
 pub use association::Association;
 pub use juniper_eager_loading_code_gen::EagerLoading;

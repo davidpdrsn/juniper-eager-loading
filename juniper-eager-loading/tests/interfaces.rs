@@ -195,14 +195,14 @@ fn loading_users_and_associations() {
         id: 10,
         country_id: country.id,
     };
-    users.insert(user.id, user.clone());
+    users.insert(user.id, user);
 
     let mut cities = StatsHash::new("cities");
     let city = models::City {
         id: 10,
         country_id: country.id,
     };
-    cities.insert(city.id, city.clone());
+    cities.insert(city.id, city);
 
     let db = Db {
         users,
@@ -230,7 +230,7 @@ fn loading_users_and_associations() {
                 { "country": { "id": country.id } },
             ]
         }),
-        actual: json.clone(),
+        actual: json,
     );
 
     assert_eq!(1, counts.user_reads);

@@ -259,7 +259,7 @@ fn loading_users_and_associations() {
                 },
             ]
         }),
-        actual: json.clone(),
+        actual: json,
     );
 
     assert_eq!(1, counts.user_reads);
@@ -319,7 +319,7 @@ fn has_many_through_fkey() {
                 },
             ]
         }),
-        actual: json.clone(),
+        actual: json,
     );
 
     assert_eq!(1, counts.user_reads);

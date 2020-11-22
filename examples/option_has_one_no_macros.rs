@@ -175,7 +175,6 @@ impl<'a> EagerLoadChildrenOfType<'a, Country, EagerLoadingContextUserForCountry,
         let ids = models
             .iter()
             .filter_map(|model| model.country_id)
-            .map(|id| id)
             .collect::<Vec<_>>();
         let ids = juniper_eager_loading::unique(ids);
 
