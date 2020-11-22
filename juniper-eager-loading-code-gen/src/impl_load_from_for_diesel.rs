@@ -173,19 +173,22 @@ impl HasOne {
         };
 
         out.extend(quote! {
-            impl juniper_eager_loading::LoadFrom<#id_ty> for #self_ty {
+            impl<'a> juniper_eager_loading::LoadFrom<'a, #id_ty> for #self_ty {
                 type Error = #error_ty;
                 type Context = #context_ty;
+                type Future = futures::future::Ready<Result<Vec<Self>, Self::Error>>
 
                 fn load(
-                    ids: &[#id_ty],
-                    _field_args: &(),
-                    ctx: &Self::Context,
-                ) -> Result<Vec<Self>, Self::Error> {
-                    #table::table
-                    .filter(#filter)
+                    ids: &'a [#id_ty],
+                    _field_args: &'a (),
+                    ctx: &'a Self::Context,
+                ) -> Self::Future {
+                    // TODO: how to asyncify diesel?
+                    let result = #table::table
+                        .filter(#filter)
                         .load::<#self_ty>(ctx.db())
-                        .map_err(From::from)
+                        .map_err(From::from);
+                    futures::future::ready(result)
                 }
             }
         });
@@ -217,24 +220,28 @@ impl HasMany {
         };
 
         out.extend(quote! {
-            impl juniper_eager_loading::LoadFrom<#join_ty> for #self_ty {
+            impl<'a> juniper_eager_loading::LoadFrom<'a, #join_ty> for #self_ty {
                 type Error = #error_ty;
                 type Context = #context_ty;
+                type Future = futures::future::Ready<Result<Vec<Self>, Self::Error>>
 
                 fn load(
-                    froms: &[#join_ty],
-                    _field_args: &(),
-                    ctx: &Self::Context,
-                ) -> Result<Vec<Self>, Self::Error> {
+                    froms: &'a [#join_ty],
+                    _field_args: &'a (),
+                    ctx: &'a Self::Context,
+                ) -> Self::Future {
+                    // TODO: how to asyncify diesel?
                     let from_ids = froms
                         .iter()
                         .map(|other| other.#join_from)
                         .collect::<Vec<_>>();
 
-                    #table::table
+                    let result = #table::table
                         .filter(#filter)
                         .load(ctx.db())
-                        .map_err(From::from)
+                        .map_err(From::from);
+
+                    futures::future::ready(result)
                 }
             }
         })

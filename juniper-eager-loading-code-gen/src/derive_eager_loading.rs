@@ -183,7 +183,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
+                        <<#inner_type as juniper_eager_loading::EagerLoading>::Model as juniper_eager_loading::LoadFrom<'_, _>>::load(&ids, field_args, ctx).await?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -200,7 +200,7 @@ impl DeriveData {
                     let ids = juniper_eager_loading::unique(ids);
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
+                        <<#inner_type as juniper_eager_loading::EagerLoading>::Model as juniper_eager_loading::LoadFrom<'_, _>>::load(&ids, field_args, ctx).await?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -221,7 +221,7 @@ impl DeriveData {
 
                 quote! {
                     let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
+                        <<#inner_type as juniper_eager_loading::EagerLoading>::Model as juniper_eager_loading::LoadFrom<'_, _>>::load(&models, field_args, ctx).await?;
 
                     #filter
 
@@ -248,12 +248,12 @@ impl DeriveData {
 
                 quote! {
                     let join_models: Vec<#join_model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
+                        <#join_model as juniper_eager_loading::LoadFrom<'_, _>>::load(&models, field_args, ctx).await?;
 
                     #filter
 
                     let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, ctx)?;
+                        <<#inner_type as juniper_eager_loading::EagerLoading>::Model as juniper_eager_loading::LoadFrom<'_, _>>::load(&join_models, field_args, ctx).await?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -276,19 +276,30 @@ impl DeriveData {
         };
 
         quote! {
+            // TODO: Don't use a boxed future here
+            type LoadChildrenFuture = std::pin::Pin<
+                std::boxed::Box<
+                    dyn std::future::Future<
+                        Output = Result<
+                            juniper_eager_loading::LoadChildrenOutput<
+                                <#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model,
+                                #join_model
+                            >,
+                            Self::Error,
+                        >
+                    > + 'a
+                >
+            >;
+
             #[allow(unused_variables)]
             fn load_children(
-                models: &[Self::Model],
-                field_args: &Self::FieldArguments,
-                ctx: &Self::Context,
-            ) -> Result<
-                juniper_eager_loading::LoadChildrenOutput<
-                    <#inner_type as juniper_eager_loading::EagerLoading>::Model,
-                    #join_model
-                >,
-                Self::Error,
-            > {
-                #load_children_impl
+                models: &'a [Self::Model],
+                field_args: &'a Self::FieldArguments,
+                ctx: &'a Self::Context,
+            ) -> Self::LoadChildrenFuture {
+                Box::pin(async move {
+                    #load_children_impl
+                })
             }
         }
     }
@@ -396,7 +407,7 @@ impl DeriveData {
             .filter_map(|field| self.gen_eager_load_for_field(field));
 
         let code = quote! {
-            impl juniper_eager_loading::EagerLoading for #struct_name {
+            impl<'a> juniper_eager_loading::EagerLoading<'a> for #struct_name {
                 type Model = #model;
                 type Id = #id;
                 type Context = #context;
@@ -408,16 +419,30 @@ impl DeriveData {
                     }
                 }
 
+                // TODO: Don't use a boxed future here
+                type EagerLoadEachFuture = std::pin::Pin<
+                    std::boxed::Box<
+                        dyn std::future::Future<
+                            Output = Result<
+                                Vec<Self>,
+                                Self::Error,
+                            >
+                        > + 'a
+                    >
+                >;
+
                 fn eager_load_each(
-                    models: &[Self::Model],
-                    ctx: &Self::Context,
-                    trail: &juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
-                ) -> Result<Vec<Self>, Self::Error> {
-                    let mut nodes = Self::from_db_models(models);
+                    models: Vec<Self::Model>,
+                    ctx: &'a Self::Context,
+                    trail: &'a juniper_from_schema::QueryTrail<'_, Self, juniper_from_schema::Walked>,
+                ) -> Self::EagerLoadEachFuture {
+                    Box::pin(async move {
+                        let mut nodes = Self::from_db_models(&models);
 
-                    #(#eager_load_children_calls)*
+                        #(#eager_load_children_calls)*
 
-                    Ok(nodes)
+                        Ok(nodes)
+                    })
                 }
             }
         };
@@ -452,11 +477,11 @@ impl DeriveData {
 
                 EagerLoadChildrenOfType::<#inner_type, #impl_context, _>::eager_load_children(
                     &mut nodes,
-                    models,
+                    &models,
                     &ctx,
                     &child_trail,
                     &field_args,
-                )?;
+                ).await?;
             }
         })
     }
