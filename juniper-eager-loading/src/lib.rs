@@ -1042,10 +1042,14 @@ impl<T> HasManyThrough<T> {
 /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
 // `JoinModel` cannot be an associated type because it requires a default.
 #[async_trait]
-pub trait EagerLoadChildrenOfType<'a, Child, ImplContext, JoinModel = ()>
+pub trait EagerLoadChildrenOfType<'a, Child, ImplContext, JoinModel = ()>:
+    EagerLoading<'a>
 where
-    Self: EagerLoading<'a>,
-    Child: EagerLoading<'a, Context = Self::Context, Error = Self::Error> + Clone,
+    Child: EagerLoading<
+            'a,
+            Context = <Self as EagerLoading<'a>>::Context,
+            Error = <Self as EagerLoading<'a>>::Error,
+        > + Clone,
     JoinModel: 'static + Clone + ?Sized + Send,
 {
     /// The types of arguments the GraphQL field takes. The type used by the code generation can be
@@ -1055,11 +1059,20 @@ where
     type FieldArguments: 'a + Sync;
 
     /// Load the children from the data store.
-    async fn load_children(
-        models: &[Self::Model],
+    fn load_children(
+        models: &[<Self as EagerLoading<'a>>::Model],
         field_args: &Self::FieldArguments,
-        ctx: &Self::Context,
-    ) -> Result<LoadChildrenOutput<Child::Model, JoinModel>, Self::Error>;
+        ctx: &<Self as EagerLoading<'a>>::Context,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        LoadChildrenOutput<Child::Model, JoinModel>,
+                        <Self as EagerLoading<'a>>::Error,
+                    >,
+                > + Send + 'a,
+        >,
+    >;
 
     /// Does this parent and this child belong together?
     ///
@@ -1069,7 +1082,7 @@ where
         child: &Child,
         join_model: &JoinModel,
         field_args: &Self::FieldArguments,
-        context: &Self::Context,
+        context: &<Self as EagerLoading<'a>>::Context,
     ) -> bool;
 
     /// Return the particular association type.
@@ -1087,11 +1100,12 @@ where
     /// models.
     fn eager_load_children(
         nodes: &'a mut [Self],
-        models: &'a [Self::Model],
-        ctx: &'a Self::Context,
+        models: &'a [<Self as EagerLoading<'a>>::Model],
+        ctx: &'a <Self as EagerLoading<'a>>::Context,
         trail: &'a QueryTrail<'_, Child, Walked>,
         field_args: &'a Self::FieldArguments,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), <Self as EagerLoading<'a>>::Error>> + Send + 'a>>
+    {
         Box::pin(async move {
             let child_models = match Self::load_children(models, field_args, ctx).await? {
                 LoadChildrenOutput::ChildModels(child_models) => {
@@ -1126,7 +1140,7 @@ where
                 child_models.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
 
             let children_without_join_models =
-                Child::eager_load_each(child_models_without_join_models, ctx, trail).await?;
+                Child::eager_load_each(&child_models_without_join_models, ctx, trail).await?;
 
             let children = children_without_join_models
                 .into_iter()
@@ -1226,7 +1240,7 @@ pub trait EagerLoading<'a>: Sized + Send + Sync {
     /// [`EagerLoadChildrenOfType`]: trait.EagerLoadChildrenOfType.html
     /// [`eager_load_children`]: trait.EagerLoadChildrenOfType.html#method.eager_load_children
     async fn eager_load_each(
-        models: Vec<Self::Model>,
+        models: &[Self::Model],
         ctx: &Self::Context,
         trail: &QueryTrail<'_, Self, Walked>,
     ) -> Result<Vec<Self>, Self::Error>;

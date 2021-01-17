@@ -32,7 +32,11 @@ pub fn gen_tokens(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
         out: TokenStream::new(),
     };
 
-    out.build_derive_output().into()
+    let tokens = out.build_derive_output().into();
+    if std::env::var("DEBUG").ok().filter(|val| val == "1").is_some() {
+        println!("{}", tokens);
+    }
+    tokens
 }
 
 struct DeriveData {
@@ -183,8 +187,8 @@ impl DeriveData {
                         .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx).await?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -200,8 +204,8 @@ impl DeriveData {
                         .collect::<Vec<_>>();
                     let ids = juniper_eager_loading::unique(ids);
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&ids, field_args, ctx).await?;
 
                     Ok(juniper_eager_loading::LoadChildrenOutput::ChildModels(child_models))
                 }
@@ -221,8 +225,8 @@ impl DeriveData {
                 };
 
                 quote! {
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx).await?;
 
                     #filter
 
@@ -249,12 +253,12 @@ impl DeriveData {
 
                 quote! {
                     let join_models: Vec<#join_model> =
-                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx)?;
+                        juniper_eager_loading::LoadFrom::load(&models, field_args, ctx).await?;
 
                     #filter
 
-                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading>::Model> =
-                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, ctx)?;
+                    let child_models: Vec<<#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model> =
+                        juniper_eager_loading::LoadFrom::load(&join_models, field_args, ctx).await?;
 
                     let mut child_and_join_model_pairs = Vec::new();
                     for join_model in join_models {
@@ -279,15 +283,15 @@ impl DeriveData {
         quote! {
             #[allow(unused_variables)]
             async fn load_children(
-                models: &[Self::Model],
+                models: &[<Self as juniper_eager_loading::EagerLoading<'a>>::Model],
                 field_args: &Self::FieldArguments,
-                ctx: &Self::Context,
+                ctx: &<Self as juniper_eager_loading::EagerLoading<'a>>::Context,
             ) -> Result<
                 juniper_eager_loading::LoadChildrenOutput<
-                    <#inner_type as juniper_eager_loading::EagerLoading>::Model,
+                    <#inner_type as juniper_eager_loading::EagerLoading<'a>>::Model,
                     #join_model
                 >,
-                Self::Error,
+                <Self as juniper_eager_loading::EagerLoading<'a>>::Error,
             > {
                 #load_children_impl
             }
@@ -355,7 +359,7 @@ impl DeriveData {
                 child: &#inner_type,
                 join_model: &#join_model,
                 _field_args: &Self::FieldArguments,
-                context: &Self::Context,
+                context: &<Self as juniper_eager_loading::EagerLoading<'a>>::Context,
             ) -> bool {
                 #is_child_of_impl
             }
@@ -398,7 +402,7 @@ impl DeriveData {
 
         let code = quote! {
             #[async_trait::async_trait]
-            impl juniper_eager_loading::EagerLoading for #struct_name {
+            impl<'a> juniper_eager_loading::EagerLoading<'a> for #struct_name {
                 type Model = #model;
                 type Id = #id;
                 type Context = #context;
